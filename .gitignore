@@ -10,6 +10,7 @@ your_venv_folder_name/
 # Exlude literature files
 documents/literature/
 documents/biblio/
+notebooks/testing_real_functionality.ipynb
 
 # Python
 __pycache__/
