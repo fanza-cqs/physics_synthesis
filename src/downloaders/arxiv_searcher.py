@@ -8,6 +8,7 @@ Handles searching and downloading papers from arXiv using multiple strategies:
 3. Google search fallback for difficult cases
 """
 
+import os
 import re
 import time
 import requests
@@ -57,7 +58,9 @@ class ArxivSearcher:
                  delay_between_requests: float = 1.0,
                  title_similarity_threshold: float = 0.6,
                  abstract_similarity_threshold: float = 0.5,
-                 high_confidence_threshold: float = 0.9):
+                 high_confidence_threshold: float = 0.9,
+                 google_api_key: Optional[str] = None,
+                 google_search_engine_id: Optional[str] = None):
         """
         Initialize the arXiv searcher.
         
@@ -66,6 +69,8 @@ class ArxivSearcher:
             title_similarity_threshold: Minimum title similarity for matches
             abstract_similarity_threshold: Minimum abstract similarity
             high_confidence_threshold: Threshold for high-confidence matches
+            google_api_key: Google Custom Search API key
+            google_search_engine_id: Google Custom Search Engine ID
         """
         self.api_base_url = "http://export.arxiv.org/api/query"
         self.delay = delay_between_requests
@@ -73,6 +78,15 @@ class ArxivSearcher:
         self.abstract_threshold = abstract_similarity_threshold
         self.high_confidence_threshold = high_confidence_threshold
         
+        # Google Custom Search API credentials
+        self.google_api_key = google_api_key or os.getenv('GOOGLE_API_KEY')
+        self.google_search_engine_id = google_search_engine_id or os.getenv('GOOGLE_SEARCH_ENGINE_ID')
+
+        if not self.google_api_key or not self.google_search_engine_id:
+            logger.warning("Google API credentials not provided. Google fallback search will be disabled.")
+            logger.warning("Set GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID environment variables to enable.")
+    
+
         # Statistics tracking
         self.search_stats = {
             'api_calls': 0,
@@ -319,7 +333,7 @@ class ArxivSearcher:
     
     def _google_search_fallback(self, paper: PaperMetadata) -> ArxivSearchResult:
         """
-        Use Google search as fallback to find papers on arXiv.
+        Use Google Custom Search API as fallback to find papers on arXiv.
         
         Args:
             paper: Paper metadata
@@ -327,21 +341,47 @@ class ArxivSearcher:
         Returns:
             ArxivSearchResult
         """
-        if not google_search:
+        if not self.google_api_key or not self.google_search_engine_id:
             return ArxivSearchResult(
                 found=False,
-                error_message="Google search not available"
+                error_message="Google API credentials not available"
             )
         
         self.search_stats['google_searches'] += 1
         
-        # Create Google search query
-        query = f'"{paper.title}" site:arxiv.org'
-        
-        logger.debug(f"Google search query: {query}")
-        
         try:
-            for url in google_search(query, num_results=5):
+            query = paper.title
+            logger.debug(f"Google Custom Search API fallback for: {paper.title[:50]}...")
+            
+            # Google Custom Search API endpoint
+            search_url = "https://www.googleapis.com/customsearch/v1"
+            
+            params = {
+                'key': self.google_api_key,
+                'cx': self.google_search_engine_id,
+                'q': query,
+                'siteSearch': 'arxiv.org',
+                'num': 5,  # Get up to 5 results
+                'fields': 'items(link,title,snippet)'  # Only get the fields we need
+            }
+            
+            response = requests.get(search_url, params=params)
+            response.raise_for_status()
+            
+            search_results = response.json()
+            
+            if 'items' not in search_results:
+                logger.info("No results from Google Custom Search API")
+                return ArxivSearchResult(
+                    found=False,
+                    error_message="No results from Google Custom Search API",
+                    search_method="google_search_failed"
+                )
+            
+            for item in search_results['items']:
+                url = item['link']
+                logger.debug(f"Checking URL: {url}")
+                
                 # Extract arXiv ID from URL
                 arxiv_id = self._extract_arxiv_id_from_url(url)
                 if not arxiv_id:
@@ -350,11 +390,12 @@ class ArxivSearcher:
                 # Get paper info from arXiv
                 arxiv_info = self._get_paper_info_by_id(arxiv_id)
                 if not arxiv_info:
+                    logger.warning(f"Could not fetch info for {arxiv_id}")
                     continue
                 
                 _, arxiv_title, arxiv_abstract = arxiv_info
                 
-                # Validate with abstract (50% threshold for Google fallback)
+                # Validate using abstract matching (50% threshold for Google fallback)
                 if (paper.abstract and arxiv_abstract and 
                     self._abstracts_similar(paper.abstract, arxiv_abstract, threshold=0.5)):
                     
@@ -366,15 +407,44 @@ class ArxivSearcher:
                         confidence=0.6,  # Lower confidence for Google search
                         search_method="google_search"
                     )
-        
+                elif not paper.abstract:
+                    # No abstract to validate, accept the match
+                    self.search_stats['successful_matches'] += 1
+                    return ArxivSearchResult(
+                        found=True,
+                        arxiv_id=arxiv_id,
+                        arxiv_title=arxiv_title,
+                        confidence=0.5,  # Even lower without validation
+                        search_method="google_search"
+                    )
+            
+            return ArxivSearchResult(
+                found=False,
+                error_message="Google search failed to find matching paper",
+                search_method="google_search_failed"
+            )
+            
+        except requests.exceptions.HTTPError as e:
+            error_msg = "Google API error"
+            if e.response.status_code == 429:
+                error_msg = "Google API rate limit exceeded - consider upgrading your quota"
+            elif e.response.status_code == 403:
+                error_msg = "Google API access forbidden - check your API key and billing"
+            
+            logger.warning(f"{error_msg}: {e}")
+            return ArxivSearchResult(
+                found=False,
+                error_message=error_msg,
+                search_method="google_search_failed"
+            )
         except Exception as e:
-            logger.error(f"Error in Google search: {e}")
-        
-        return ArxivSearchResult(
-            found=False,
-            error_message="Google search failed to find matching paper",
-            search_method="google_search_failed"
-        )
+            logger.warning(f"Google Custom Search API failed: {e}")
+            return ArxivSearchResult(
+                found=False,
+                error_message=f"Google search exception: {e}",
+                search_method="google_search_failed"
+            )
+
     
     def _execute_arxiv_search(self, query: str, max_results: int = 10) -> List[Tuple[str, str, str]]:
         """

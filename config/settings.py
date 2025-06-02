@@ -35,8 +35,10 @@ class PipelineConfig:
         self.reports_folder = self.project_root / "reports"
         
         # API Configuration
+        # API Configuration
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         self.google_api_key = os.getenv("GOOGLE_API_KEY")
+        self.google_search_engine_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
         
         # Download settings
         self.download_delay = 1.2  # Seconds between arXiv requests
@@ -112,7 +114,9 @@ class PipelineConfig:
             'timeout': self.timeout_seconds,
             'title_threshold': self.title_similarity_threshold,
             'abstract_threshold': self.abstract_similarity_threshold,
-            'high_confidence_threshold': self.high_confidence_threshold
+            'high_confidence_threshold': self.high_confidence_threshold,
+            'google_api_key': self.google_api_key,
+            'google_search_engine_id': self.google_search_engine_id
         }
     
     def get_embedding_config(self) -> Dict[str, Any]:

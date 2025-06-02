@@ -169,6 +169,34 @@ export ANTHROPIC_API_KEY="your-key"
 config = PipelineConfig({'anthropic_api_key': 'your-key'})
 ```
 
+## Google Custom Search API Setup (Optional)
+
+To enable Google search fallback for papers not found via arXiv API:
+
+1. **Create a Custom Search Engine:**
+   - Go to [Google Custom Search Engine](https://cse.google.com/cse/)
+   - Click "Add" to create a new search engine
+   - Set "Sites to search" to `arxiv.org`
+   - Give it a name like "arXiv Papers"
+   - Click "Create"
+
+2. **Get your Search Engine ID:**
+   - In the control panel, click on your search engine
+   - Go to "Setup" → "Basics"
+   - Copy the "Search engine ID"
+
+3. **Enable the Custom Search API:**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select existing one
+   - Enable the "Custom Search API"
+   - Go to "Credentials" and create an API key
+
+4. **Set environment variables:**
+   ```bash
+   export GOOGLE_API_KEY="your-google-api-key"
+   export GOOGLE_SEARCH_ENGINE_ID="your-search-engine-id"
+
+
 ## Advanced Usage
 
 ### Custom Document Processing

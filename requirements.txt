@@ -24,7 +24,6 @@ anthropic>=0.18.0
 
 # Web scraping and search
 requests>=2.28.0
-googlesearch-python>=1.2.0
 
 
 

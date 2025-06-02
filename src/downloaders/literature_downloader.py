@@ -56,7 +56,9 @@ class LiteratureDownloader:
             delay_between_requests=delay_between_downloads,
             title_similarity_threshold=arxiv_config.get('title_threshold', 0.6),
             abstract_similarity_threshold=arxiv_config.get('abstract_threshold', 0.5),
-            high_confidence_threshold=arxiv_config.get('high_confidence_threshold', 0.9)
+            high_confidence_threshold=arxiv_config.get('high_confidence_threshold', 0.9),
+            google_api_key=arxiv_config.get('google_api_key'),
+            google_search_engine_id=arxiv_config.get('google_search_engine_id')
         )
         
         logger.info(f"Literature downloader initialized with output: {output_directory}")
