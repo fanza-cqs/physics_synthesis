@@ -116,33 +116,59 @@ class ArxivSearcher:
         if paper.arxiv_id:
             result = self._validate_existing_arxiv_id(paper)
             if result.found:
+                print(f"✅ Validated existing arXiv ID: {result.arxiv_id}")
                 return result
+            else:
+                print(f"❌ Failed to validate existing arXiv ID: {result.error_message}")
+        
         
         # Strategy 2: Search by title using arXiv API
         result = self._search_by_title(paper)
         if result.found:
+            print(f"✅ Found via title search: {result.arxiv_id} (confidence: {result.confidence:.3f})")
             return result
+        else:
+            print(f"❌ Title search failed: {result.error_message}")
+        
         
         # Strategy 3: Search by abstract content if available
         if paper.abstract and len(paper.abstract.strip()) > 20:
+            print(f"📝 Strategy 3: Searching by abstract content...")
+            print(f"    Abstract preview: {paper.abstract[:100]}...")
             result = self._search_by_abstract(paper)
             if result.found:
+                print(f"✅ Found via abstract search: {result.arxiv_id} (confidence: {result.confidence:.3f})")
                 return result
+            else:
+                print(f"❌ Abstract search failed: {result.error_message}")
+        else:
+            print(f"⏭️  Skipping abstract search (no abstract or too short)")
         
-        # Strategy 4: Google search fallback
-        if google_search:
+
+        # Strategy 4: Google Custom Search API fallback
+        if self.google_api_key and self.google_search_engine_id:
+            print(f"🌐 Strategy 4: Google Custom Search API fallback...")
             result = self._google_search_fallback(paper)
             if result.found:
+                print(f"✅ Found via Google API search: {result.arxiv_id} (confidence: {result.confidence:.3f})")
                 return result
+            else:
+                print(f"❌ Google API search failed: {result.error_message}")
+        else:
+            print(f"⏭️  Skipping Google API search (not configured)")
         
+
         # All strategies failed
+        print(f"💥 ALL SEARCH STRATEGIES FAILED")
+        print("="*80)
+        
         self.search_stats['failed_matches'] += 1
         return ArxivSearchResult(
             found=False,
             error_message="Not found using any search method",
             search_method="all_methods_failed"
         )
-    
+
     def _validate_existing_arxiv_id(self, paper: PaperMetadata) -> ArxivSearchResult:
         """
         Validate an existing arXiv ID from the BibTeX.
@@ -164,10 +190,14 @@ class ArxivSearcher:
                 )
             
             arxiv_id, arxiv_title, arxiv_abstract = arxiv_info
+            print(f"    📄 Found on arXiv: {arxiv_title[:60]}...")
+            
             
             # Validate with abstract if available
             if paper.abstract and arxiv_abstract:
-                if self._abstracts_similar(paper.abstract, arxiv_abstract):
+                similarity = self._calculate_abstract_similarity(paper.abstract, arxiv_abstract)
+                print(f"    📊 Abstract similarity: {similarity:.3f}")
+                if similarity >= self.abstract_threshold:
                     self.search_stats['successful_matches'] += 1
                     return ArxivSearchResult(
                         found=True,
@@ -178,6 +208,7 @@ class ArxivSearcher:
                     )
             else:
                 # No abstract to validate, accept the ID
+                print(f"    ℹ️  No abstract validation available")
                 self.search_stats['successful_matches'] += 1
                 return ArxivSearchResult(
                     found=True,
@@ -188,6 +219,7 @@ class ArxivSearcher:
                 )
         
         except Exception as e:
+            print(f"    ❌ Validation error: {e}")
             logger.error(f"Error validating arXiv ID {paper.arxiv_id}: {e}")
         
         return ArxivSearchResult(
@@ -207,6 +239,8 @@ class ArxivSearcher:
         """
         # Clean title for search
         clean_title = self._clean_title_for_search(paper.title)
+        print(f"    📝 Original title: {paper.title}")
+        print(f"    🧹 Cleaned title: {clean_title}")
         if not clean_title:
             return ArxivSearchResult(
                 found=False,
@@ -215,22 +249,27 @@ class ArxivSearcher:
         
         # Build search query
         query = f"ti:\"{clean_title}\""
+        print(f"    🔍 Search query: {query}")
         
         logger.debug(f"Title search query: {query}")
         
         try:
             results = self._execute_arxiv_search(query, max_results=10)
+            print(f"    📊 Found {len(results)} results from arXiv API")
             
-            for arxiv_id, arxiv_title, arxiv_abstract in results:
+            
+            for i, (arxiv_id, arxiv_title, arxiv_abstract) in enumerate(results):
+                print(f"    📄 Result {i+1}: {arxiv_id} - {arxiv_title[:60]}...")
+                
                 # Calculate title similarity
                 title_similarity = self._calculate_title_similarity(
                     paper.title, arxiv_title
                 )
-                
-                logger.debug(f"Title similarity for {arxiv_id}: {title_similarity:.3f}")
+                print(f"        📊 Title similarity: {title_similarity:.3f}")
                 
                 # High confidence match
                 if title_similarity >= self.high_confidence_threshold:
+                    print(f"        ✅ HIGH CONFIDENCE MATCH!")
                     self.search_stats['successful_matches'] += 1
                     return ArxivSearchResult(
                         found=True,
@@ -242,19 +281,27 @@ class ArxivSearcher:
                 
                 # Medium confidence - validate with abstract
                 elif title_similarity >= self.title_threshold:
-                    if (paper.abstract and arxiv_abstract and 
-                        self._abstracts_similar(paper.abstract, arxiv_abstract)):
-                        
-                        self.search_stats['successful_matches'] += 1
-                        return ArxivSearchResult(
-                            found=True,
-                            arxiv_id=arxiv_id,
-                            arxiv_title=arxiv_title,
-                            confidence=title_similarity,
-                            search_method="title_with_abstract_validation"
+                    print(f"        🔍 Medium confidence, checking abstract...")
+                    if paper.abstract and arxiv_abstract:
+                        abstract_similarity = self._calculate_abstract_similarity(
+                            paper.abstract, arxiv_abstract
                         )
+                        print(f"        📊 Abstract similarity: {abstract_similarity:.3f}")
+                        
+                        if abstract_similarity >= self.abstract_threshold:
+                            print(f"        ✅ VALIDATED WITH ABSTRACT!")
+                            self.search_stats['successful_matches'] += 1
+                            return ArxivSearchResult(
+                                found=True,
+                                arxiv_id=arxiv_id,
+                                arxiv_title=arxiv_title,
+                                confidence=title_similarity,
+                                search_method="title_with_abstract_validation"
+                            )
+                        else:
+                            print(f"        ❌ Abstract validation failed")
                     elif not paper.abstract:
-                        # No abstract to validate, accept medium confidence
+                        print(f"        ✅ No abstract to validate, accepting medium confidence")
                         self.search_stats['successful_matches'] += 1
                         return ArxivSearchResult(
                             found=True,
@@ -263,8 +310,11 @@ class ArxivSearcher:
                             confidence=title_similarity,
                             search_method="title_medium_confidence"
                         )
+                else:
+                    print(f"        ❌ Similarity too low ({title_similarity:.3f} < {self.title_threshold})")
         
         except Exception as e:
+            print(f"    ❌ API Error: {e}")
             logger.error(f"Error in title search: {e}")
             return ArxivSearchResult(
                 found=False,
@@ -289,6 +339,8 @@ class ArxivSearcher:
         """
         # Extract meaningful snippet from abstract
         abstract_snippet = self._extract_abstract_snippet(paper.abstract)
+        print(f"    📝 Abstract snippet: {abstract_snippet}")
+        
         if not abstract_snippet:
             return ArxivSearchResult(
                 found=False,
@@ -297,21 +349,33 @@ class ArxivSearcher:
         
         # Search in all fields
         query = f'all:"{abstract_snippet}"'
+        print(f"    🔍 Search query: {query}")
         
         logger.debug(f"Abstract search query: {query}")
         
         try:
             results = self._execute_arxiv_search(query, max_results=5)
+            print(f"    📊 Found {len(results)} results from arXiv API")
             
-            for arxiv_id, arxiv_title, arxiv_abstract in results:
+            
+            for i, (arxiv_id, arxiv_title, arxiv_abstract) in enumerate(results):
+                print(f"    📄 Result {i+1}: {arxiv_id} - {arxiv_title[:60]}...")
+                
                 # Check abstract similarity
-                if self._abstracts_similar(paper.abstract, arxiv_abstract):
+                abstract_similarity = self._calculate_abstract_similarity(
+                    paper.abstract, arxiv_abstract
+                )
+                print(f"        📊 Abstract similarity: {abstract_similarity:.3f}")
+                
+                if abstract_similarity >= self.abstract_threshold:
                     # Also check title for additional confidence
                     title_similarity = self._calculate_title_similarity(
                         paper.title, arxiv_title
                     )
+                    print(f"        📊 Title similarity: {title_similarity:.3f}")
                     
                     confidence = max(title_similarity, 0.7)  # Boost confidence for abstract match
+                    print(f"        ✅ ABSTRACT MATCH FOUND!")
                     
                     self.search_stats['successful_matches'] += 1
                     return ArxivSearchResult(
@@ -321,6 +385,8 @@ class ArxivSearcher:
                         confidence=confidence,
                         search_method="abstract_search"
                     )
+                else:
+                    print(f"        ❌ Abstract similarity too low")
         
         except Exception as e:
             logger.error(f"Error in abstract search: {e}")
@@ -347,6 +413,11 @@ class ArxivSearcher:
                 error_message="Google API credentials not available"
             )
         
+        #print(f"    🌐 Using Google Custom Search API...")
+        #print(f"    🔑 API Key: {'***' + self.google_api_key[-4:] if self.google_api_key else 'Not set'}")
+        #print(f"    🔍 Search Engine ID: {self.google_search_engine_id}")
+        
+
         # ADD THIS LOG
         print(f"\n🔍 GOOGLE FALLBACK ACTIVATED for: {paper.title[:50]}...")
         logger.info(f"🔍 Google Custom Search API activated for: {paper.title[:50]}...")
@@ -357,9 +428,10 @@ class ArxivSearcher:
         try:
             query = paper.title
             logger.debug(f"Google Custom Search API fallback for: {paper.title[:50]}...")
+            print(f"    📝 Search query: {query}")
             
             # ADD THIS LOG
-            print(f"📡 Making Google API request with query: {query[:50]}...")
+            #print(f"📡 Making Google API request with query: {query[:50]}...")
 
             # Google Custom Search API endpoint
             search_url = "https://www.googleapis.com/customsearch/v1"
@@ -373,6 +445,7 @@ class ArxivSearcher:
                 'fields': 'items(link,title,snippet)'  # Only get the fields we need
             }
             
+            print(f"    📡 Making Google API request...")
             response = requests.get(search_url, params=params)
             response.raise_for_status()
             
@@ -382,6 +455,7 @@ class ArxivSearcher:
             print(f"📊 Google returned {len(search_results.get('items', []))} results")
 
             if 'items' not in search_results:
+                print(f"    ❌ No results from Google Custom Search API")
                 logger.info("No results from Google Custom Search API")
                 return ArxivSearchResult(
                     found=False,
@@ -389,45 +463,63 @@ class ArxivSearcher:
                     search_method="google_search_failed"
                 )
             
-            for item in search_results['items']:
+            print(f"    📊 Google returned {len(search_results['items'])} results")
+
+
+            for i, item in enumerate(search_results['items']):
                 url = item['link']
-                logger.debug(f"Checking URL: {url}")
+                title = item.get('title', 'No title')
+                print(f"    📄 Result {i+1}: {title[:60]}...")
+                print(f"        🔗 URL: {url}")
                 
                 # Extract arXiv ID from URL
                 arxiv_id = self._extract_arxiv_id_from_url(url)
                 if not arxiv_id:
+                    print(f"        ❌ Could not extract arXiv ID from URL")
                     continue
+                
+                print(f"        📋 Extracted arXiv ID: {arxiv_id}")
                 
                 # Get paper info from arXiv
                 arxiv_info = self._get_paper_info_by_id(arxiv_id)
                 if not arxiv_info:
-                    logger.warning(f"Could not fetch info for {arxiv_id}")
+                    print(f"        ❌ Could not fetch info for {arxiv_id}")
                     continue
                 
                 _, arxiv_title, arxiv_abstract = arxiv_info
+                print(f"        📄 ArXiv title: {arxiv_title[:60]}...")
                 
                 # Validate using abstract matching (50% threshold for Google fallback)
-                if (paper.abstract and arxiv_abstract and 
-                    self._abstracts_similar(paper.abstract, arxiv_abstract, threshold=0.5)):
+                if paper.abstract and arxiv_abstract:
+                    abstract_similarity = self._calculate_abstract_similarity(
+                        paper.abstract, arxiv_abstract, threshold=0.5
+                    )
+                    print(f"        📊 Abstract similarity: {abstract_similarity:.3f}")
                     
-                    self.search_stats['successful_matches'] += 1
-                    return ArxivSearchResult(
-                        found=True,
-                        arxiv_id=arxiv_id,
-                        arxiv_title=arxiv_title,
-                        confidence=0.6,  # Lower confidence for Google search
-                        search_method="google_search"
-                    )
+                    if abstract_similarity >= 0.5:
+                        print(f"        ✅ GOOGLE SEARCH MATCH FOUND!")
+                        self.search_stats['successful_matches'] += 1
+                        return ArxivSearchResult(
+                            found=True,
+                            arxiv_id=arxiv_id,
+                            arxiv_title=arxiv_title,
+                            confidence=0.6,
+                            search_method="google_search"
+                        )
+                    else:
+                        print(f"        ❌ Abstract validation failed")
                 elif not paper.abstract:
-                    # No abstract to validate, accept the match
+                    print(f"        ✅ No abstract to validate, accepting Google match")
                     self.search_stats['successful_matches'] += 1
                     return ArxivSearchResult(
                         found=True,
                         arxiv_id=arxiv_id,
                         arxiv_title=arxiv_title,
-                        confidence=0.5,  # Even lower without validation
+                        confidence=0.5,
                         search_method="google_search"
                     )
+                else:
+                    print(f"        ❌ No arXiv abstract available for validation")
             
             return ArxivSearchResult(
                 found=False,
@@ -442,6 +534,7 @@ class ArxivSearcher:
             elif e.response.status_code == 403:
                 error_msg = "Google API access forbidden - check your API key and billing"
             
+            print(f"    ❌ {error_msg}: {e}")
             logger.warning(f"{error_msg}: {e}")
             return ArxivSearchResult(
                 found=False,
@@ -449,6 +542,7 @@ class ArxivSearcher:
                 search_method="google_search_failed"
             )
         except Exception as e:
+            print(f"    ❌ Google API exception: {e}")
             logger.warning(f"Google Custom Search API failed: {e}")
             return ArxivSearchResult(
                 found=False,
@@ -456,18 +550,85 @@ class ArxivSearcher:
                 search_method="google_search_failed"
             )
 
+
+    def _basic_google_search(self, paper: PaperMetadata) -> ArxivSearchResult:
+        """Use basic Google search as final fallback with detailed logging."""
+        print(f"    🔍 Using basic Google search (googlesearch-python)...")
+        
+        try:
+            query = f"{paper.title} site:arxiv.org"
+            print(f"    📝 Search query: {query}")
+            
+            results = list(google_search(query, num_results=5, sleep_interval=2))
+            print(f"    📊 Found {len(results)} Google results")
+            
+            for i, url in enumerate(results):
+                print(f"    📄 Result {i+1}: {url}")
+                
+                # Extract arXiv ID from URL
+                arxiv_id = self._extract_arxiv_id_from_url(url)
+                if not arxiv_id:
+                    print(f"        ❌ Could not extract arXiv ID from URL")
+                    continue
+                
+                print(f"        📋 Extracted arXiv ID: {arxiv_id}")
+                
+                # Get paper info from arXiv
+                arxiv_info = self._get_paper_info_by_id(arxiv_id)
+                if not arxiv_info:
+                    print(f"        ❌ Could not fetch info for {arxiv_id}")
+                    continue
+                
+                _, arxiv_title, arxiv_abstract = arxiv_info
+                print(f"        📄 ArXiv title: {arxiv_title[:60]}...")
+                
+                # Basic validation - just check if we can get the paper info
+                print(f"        ✅ BASIC GOOGLE SEARCH MATCH FOUND!")
+                self.search_stats['successful_matches'] += 1
+                return ArxivSearchResult(
+                    found=True,
+                    arxiv_id=arxiv_id,
+                    arxiv_title=arxiv_title,
+                    confidence=0.4,  # Lower confidence for basic search
+                    search_method="basic_google_search"
+                )
+            
+            return ArxivSearchResult(
+                found=False,
+                error_message="Basic Google search failed to find matching paper",
+                search_method="basic_google_search_failed"
+            )
+            
+        except Exception as e:
+            print(f"    ❌ Basic Google search exception: {e}")
+            logger.warning(f"Basic Google search failed: {e}")
+            return ArxivSearchResult(
+                found=False,
+                error_message=f"Basic Google search exception: {e}",
+                search_method="basic_google_search_failed"
+            )
+    
+    def _calculate_abstract_similarity(self, abstract1: str, abstract2: str, threshold: float = None) -> float:
+        """Calculate similarity between two abstracts and return the score."""
+        if threshold is None:
+            threshold = self.abstract_threshold
+        
+        words1 = set(re.findall(r'\w+', abstract1.lower()))
+        words2 = set(re.findall(r'\w+', abstract2.lower()))
+        
+        if len(words1) == 0 or len(words2) == 0:
+            return 0.0
+        
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        similarity = intersection / union if union > 0 else 0
+        return similarity
+
+
     
     def _execute_arxiv_search(self, query: str, max_results: int = 10) -> List[Tuple[str, str, str]]:
-        """
-        Execute search query against arXiv API.
-        
-        Args:
-            query: Search query string
-            max_results: Maximum results to return
-        
-        Returns:
-            List of tuples (arxiv_id, title, abstract)
-        """
+        """Execute search query against arXiv API with detailed logging."""
         self.search_stats['api_calls'] += 1
         
         params = {
@@ -476,7 +637,7 @@ class ArxivSearcher:
             'max_results': max_results
         }
         
-        logger.debug(f"ArXiv API call: {query}")
+        print(f"    📡 ArXiv API call: {query}")
         
         response = requests.get(self.api_base_url, params=params)
         response.raise_for_status()
@@ -484,6 +645,8 @@ class ArxivSearcher:
         # Parse XML response
         root = ET.fromstring(response.content)
         entries = root.findall('{http://www.w3.org/2005/Atom}entry')
+        
+        print(f"    📊 ArXiv returned {len(entries)} entries")
         
         results = []
         for entry in entries:
@@ -587,7 +750,7 @@ class ArxivSearcher:
         
         return snippet.strip() if len(snippet.strip()) >= 10 else None
     
-    def _calculate_title_similarity(self, title1: str, title2: str) -> float:
+    def _calculate_title_similarity_old(self, title1: str, title2: str) -> float:
         """Calculate similarity between two titles."""
         words1 = set(re.findall(r'\w+', title1.lower()))
         words2 = set(re.findall(r'\w+', title2.lower()))
@@ -600,6 +763,49 @@ class ArxivSearcher:
         
         return intersection / union if union > 0 else 0.0
     
+
+    def _calculate_title_similarity(self, title1: str, title2: str) -> float:
+        """
+        Calculate similarity between two titles - IMPROVED to handle common variations.
+        """
+        import re
+        
+        def normalize_title(title):
+            """Normalize title to handle common variations."""
+            # Convert to lowercase
+            title = title.lower()
+            
+            # Handle common singular/plural patterns
+            title = re.sub(r'\btransitions?\b', 'transition', title)
+            title = re.sub(r'\bmeasurements?\b', 'measurement', title)
+            title = re.sub(r'\bphases?\b', 'phase', title)
+            title = re.sub(r'\bstates?\b', 'state', title)
+            title = re.sub(r'\bcircuits?\b', 'circuit', title)
+            title = re.sub(r'\bsystems?\b', 'system', title)
+            title = re.sub(r'\bmodels?\b', 'model', title)
+            title = re.sub(r'\beffects?\b', 'effect', title)
+            title = re.sub(r'\bproperties?\b', 'property', title)
+            title = re.sub(r'\bmethods?\b', 'method', title)
+            
+            return title
+        
+        # Normalize both titles
+        norm_title1 = normalize_title(title1)
+        norm_title2 = normalize_title(title2)
+        
+        # Extract words
+        words1 = set(re.findall(r'\w+', norm_title1))
+        words2 = set(re.findall(r'\w+', norm_title2))
+        
+        if len(words1) == 0 or len(words2) == 0:
+            return 0.0
+        
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        return intersection / union if union > 0 else 0.0
+
+
     def _abstracts_similar(self, abstract1: str, abstract2: str, threshold: float = None) -> bool:
         """Check if two abstracts are similar enough."""
         if threshold is None:
@@ -618,29 +824,44 @@ class ArxivSearcher:
         return similarity >= threshold
     
     def _extract_arxiv_id_from_url(self, url: str) -> Optional[str]:
-        """Extract arXiv ID from URL."""
+        """Extract arXiv ID from URL - FIXED to handle both old and new format IDs."""
         if not url or 'arxiv.org' not in url:
             return None
         
-        # Handle different URL formats
+        # Handle different URL formats - CORRECTED patterns to capture full IDs
         patterns = [
-            r'/abs/([^/\s]+)',
-            r'/pdf/([^/\s]+)',
-            r'arxiv\.org/[^/]*/([^/\s]+)'
+            r'/abs/([^/\s\?#]+(?:/[^/\s\?#]+)?)',          # /abs/2112.00716 or /abs/quant-ph/0605249
+            r'/pdf/([^/\s\?#]+(?:/[^/\s\?#]+)?)',          # /pdf/2112.00716.pdf or /pdf/quant-ph/0605249
+            r'/html/([^/\s\?#]+(?:/[^/\s\?#]+)?)',         # /html/2112.00716v1 (some newer URLs)
+            r'arxiv\.org/[^/]*/([^/\s\?#]+(?:/[^/\s\?#]+)?)' # arxiv.org/*/ID (catch-all)
         ]
         
         for pattern in patterns:
             match = re.search(pattern, url)
             if match:
                 arxiv_part = match.group(1)
-                # Clean up
-                arxiv_part = re.sub(r'\.pdf$', '', arxiv_part)
-                if 'v' in arxiv_part and arxiv_part.split('v')[-1].isdigit():
-                    arxiv_part = arxiv_part.split('v')[0]
+                
+                # Clean up version numbers and file extensions
+                arxiv_part = re.sub(r'\.pdf$', '', arxiv_part)  # Remove .pdf
+                arxiv_part = re.sub(r'\.html$', '', arxiv_part)  # Remove .html
+                
+                # Handle version numbers (v1, v2, etc.)
+                if 'v' in arxiv_part:
+                    parts = arxiv_part.split('v')
+                    if len(parts) == 2 and parts[1].isdigit():
+                        arxiv_part = parts[0]
                 
                 # Validate format
-                if (re.match(r'\d{4}\.\d{4,5}', arxiv_part) or 
-                    re.match(r'[a-z-]+/\d{7}', arxiv_part)):
+                # New format: 2112.00716 (year.number)
+                if re.match(r'^\d{4}\.\d{4,5}$', arxiv_part):
+                    return arxiv_part
+                
+                # Old format: quant-ph/0605249 (subject-class/YYMMnnn)
+                if re.match(r'^[a-z-]+/\d{7}$', arxiv_part):
+                    return arxiv_part
+                
+                # Very old format: subject-class/YYMMnnn (flexible digits)
+                if re.match(r'^[a-z-]+/\d{4,7}$', arxiv_part):
                     return arxiv_part
         
         return None
