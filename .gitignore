@@ -1,0 +1,22 @@
+# Virtual environment
+venv/
+env/
+physics_pipeline_env/
+.env/
+.venv/
+# Add your specific folder name if different
+your_venv_folder_name/
+
+# Exlude literature files
+documents/literature/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Other common excludes
+.DS_Store
+*.log

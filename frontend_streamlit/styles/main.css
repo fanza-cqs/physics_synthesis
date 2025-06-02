@@ -1,0 +1,153 @@
+/* Main CSS Styles for Physics Literature Synthesis Pipeline */
+
+.main-header {
+    font-size: 3rem;
+    font-weight: 700;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.metric-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 1rem;
+    border-radius: 10px;
+    color: white;
+    text-align: center;
+    margin: 0.5rem 0;
+}
+
+.sidebar-section {
+    padding: 1rem 0;
+    border-bottom: 1px solid #e2e8f0;
+    margin: 1rem 0;
+}
+
+/* NUCLEAR OPTION: Hide ALL potential dividers */
+hr,
+div[data-testid="stVerticalBlock"] hr,
+.main hr,
+.stApp hr,
+div[style*="border-top"],
+div[style*="border-bottom"],
+.stVerticalBlock > div > div[style*="border"],
+[data-testid="stHorizontalBlock"] [style*="border"] {
+    display: none !important;
+}
+
+/* Also hide any element that looks like a divider */
+div[style*="height: 1px"],
+div[style*="height:1px"],
+div[style*="height: 2px"],
+div[style*="height:2px"],
+div[style*="background-color: rgb(240, 242, 246)"],
+div[style*="background-color: #f0f2f6"],
+div[style*="background-color:rgb(240, 242, 246)"],
+div[style*="background-color:#f0f2f6"] {
+    display: none !important;
+}
+
+/* Custom thin dividers */
+.thin-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, #e2e8f0 20%, #e2e8f0 80%, transparent 100%);
+    margin: 1.5rem 0;
+    border: none;
+}
+
+.sidebar-divider {
+    height: 1px;
+    background: #e2e8f0;
+    margin: 1rem 0;
+    border: none;
+}
+
+/* Status indicators */
+.status-success {
+    color: #22c55e;
+    font-weight: 600;
+}
+
+.status-error {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+.status-warning {
+    color: #f59e0b;
+    font-weight: 600;
+}
+
+/* Button styles */
+.stButton > button {
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Tab styling */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+}
+
+/* File uploader styling */
+.stFileUploader > div > div {
+    border-radius: 10px;
+    border: 2px dashed #667eea;
+}
+
+/* Metrics styling */
+.metric-container {
+    background: white;
+    padding: 1rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin: 0.5rem 0;
+}
+
+/* Loading spinner customization */
+.stSpinner > div {
+    border-top-color: #667eea;
+}
+
+/* Success/Error messages */
+.stSuccess {
+    border-radius: 8px;
+}
+
+.stError {
+    border-radius: 8px;
+}
+
+.stWarning {
+    border-radius: 8px;
+}
+
+/* DataFrame styling */
+.stDataFrame {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Selectbox styling */
+.stSelectbox > div > div {
+    border-radius: 8px;
+}
+
+/* Slider styling */
+.stSlider > div > div > div > div {
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+}

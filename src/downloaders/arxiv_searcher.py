@@ -1,0 +1,665 @@
+#!/usr/bin/env python3
+"""
+ArXiv searcher for the Physics Literature Synthesis Pipeline.
+
+Handles searching and downloading papers from arXiv using multiple strategies:
+1. Direct API search by title
+2. Abstract-based search fallback
+3. Google search fallback for difficult cases
+"""
+
+import re
+import time
+import requests
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Optional, Tuple, List, Dict, Any
+from dataclasses import dataclass
+
+try:
+    from googlesearch import search as google_search
+except ImportError:
+    google_search = None
+
+from .bibtex_parser import PaperMetadata
+from ..utils.logging_config import get_logger
+from ..utils.file_utils import clean_filename, extract_tar_archive
+
+logger = get_logger(__name__)
+
+@dataclass
+class ArxivSearchResult:
+    """Result of an arXiv search operation."""
+    found: bool
+    arxiv_id: Optional[str] = None
+    arxiv_title: Optional[str] = None
+    confidence: float = 0.0
+    search_method: str = ""
+    error_message: Optional[str] = None
+
+@dataclass
+class DownloadResult:
+    """Result of a download operation."""
+    pdf_downloaded: bool = False
+    tex_downloaded: bool = False
+    pdf_path: Optional[str] = None
+    tex_path: Optional[str] = None
+    error_message: Optional[str] = None
+
+class ArxivSearcher:
+    """
+    Search and download papers from arXiv.
+    
+    Uses multiple search strategies with validation to maximize success rate.
+    """
+    
+    def __init__(self, 
+                 delay_between_requests: float = 1.0,
+                 title_similarity_threshold: float = 0.6,
+                 abstract_similarity_threshold: float = 0.5,
+                 high_confidence_threshold: float = 0.9):
+        """
+        Initialize the arXiv searcher.
+        
+        Args:
+            delay_between_requests: Seconds to wait between API calls
+            title_similarity_threshold: Minimum title similarity for matches
+            abstract_similarity_threshold: Minimum abstract similarity
+            high_confidence_threshold: Threshold for high-confidence matches
+        """
+        self.api_base_url = "http://export.arxiv.org/api/query"
+        self.delay = delay_between_requests
+        self.title_threshold = title_similarity_threshold
+        self.abstract_threshold = abstract_similarity_threshold
+        self.high_confidence_threshold = high_confidence_threshold
+        
+        # Statistics tracking
+        self.search_stats = {
+            'api_calls': 0,
+            'google_searches': 0,
+            'successful_matches': 0,
+            'failed_matches': 0
+        }
+        
+        logger.info("ArXiv searcher initialized")
+        
+        if not google_search:
+            logger.warning("Google search not available (install googlesearch-python)")
+    
+    def search_paper(self, paper: PaperMetadata) -> ArxivSearchResult:
+        """
+        Search for a paper on arXiv using multiple strategies.
+        
+        Args:
+            paper: Paper metadata from BibTeX
+        
+        Returns:
+            ArxivSearchResult with search outcome
+        """
+        logger.info(f"Searching for paper: {paper.title[:50]}...")
+        
+        # Strategy 1: If we already have an arXiv ID, validate it
+        if paper.arxiv_id:
+            result = self._validate_existing_arxiv_id(paper)
+            if result.found:
+                return result
+        
+        # Strategy 2: Search by title using arXiv API
+        result = self._search_by_title(paper)
+        if result.found:
+            return result
+        
+        # Strategy 3: Search by abstract content if available
+        if paper.abstract and len(paper.abstract.strip()) > 20:
+            result = self._search_by_abstract(paper)
+            if result.found:
+                return result
+        
+        # Strategy 4: Google search fallback
+        if google_search:
+            result = self._google_search_fallback(paper)
+            if result.found:
+                return result
+        
+        # All strategies failed
+        self.search_stats['failed_matches'] += 1
+        return ArxivSearchResult(
+            found=False,
+            error_message="Not found using any search method",
+            search_method="all_methods_failed"
+        )
+    
+    def _validate_existing_arxiv_id(self, paper: PaperMetadata) -> ArxivSearchResult:
+        """
+        Validate an existing arXiv ID from the BibTeX.
+        
+        Args:
+            paper: Paper with existing arXiv ID
+        
+        Returns:
+            ArxivSearchResult
+        """
+        logger.debug(f"Validating existing arXiv ID: {paper.arxiv_id}")
+        
+        try:
+            arxiv_info = self._get_paper_info_by_id(paper.arxiv_id)
+            if not arxiv_info:
+                return ArxivSearchResult(
+                    found=False,
+                    error_message=f"arXiv ID {paper.arxiv_id} not found on arXiv"
+                )
+            
+            arxiv_id, arxiv_title, arxiv_abstract = arxiv_info
+            
+            # Validate with abstract if available
+            if paper.abstract and arxiv_abstract:
+                if self._abstracts_similar(paper.abstract, arxiv_abstract):
+                    self.search_stats['successful_matches'] += 1
+                    return ArxivSearchResult(
+                        found=True,
+                        arxiv_id=arxiv_id,
+                        arxiv_title=arxiv_title,
+                        confidence=0.95,
+                        search_method="existing_id_validated"
+                    )
+            else:
+                # No abstract to validate, accept the ID
+                self.search_stats['successful_matches'] += 1
+                return ArxivSearchResult(
+                    found=True,
+                    arxiv_id=arxiv_id,
+                    arxiv_title=arxiv_title,
+                    confidence=0.8,
+                    search_method="existing_id_accepted"
+                )
+        
+        except Exception as e:
+            logger.error(f"Error validating arXiv ID {paper.arxiv_id}: {e}")
+        
+        return ArxivSearchResult(
+            found=False,
+            error_message=f"Failed to validate arXiv ID {paper.arxiv_id}"
+        )
+    
+    def _search_by_title(self, paper: PaperMetadata) -> ArxivSearchResult:
+        """
+        Search arXiv by paper title.
+        
+        Args:
+            paper: Paper metadata
+        
+        Returns:
+            ArxivSearchResult
+        """
+        # Clean title for search
+        clean_title = self._clean_title_for_search(paper.title)
+        if not clean_title:
+            return ArxivSearchResult(
+                found=False,
+                error_message="Title too short after cleaning"
+            )
+        
+        # Build search query
+        query = f"ti:\"{clean_title}\""
+        
+        logger.debug(f"Title search query: {query}")
+        
+        try:
+            results = self._execute_arxiv_search(query, max_results=10)
+            
+            for arxiv_id, arxiv_title, arxiv_abstract in results:
+                # Calculate title similarity
+                title_similarity = self._calculate_title_similarity(
+                    paper.title, arxiv_title
+                )
+                
+                logger.debug(f"Title similarity for {arxiv_id}: {title_similarity:.3f}")
+                
+                # High confidence match
+                if title_similarity >= self.high_confidence_threshold:
+                    self.search_stats['successful_matches'] += 1
+                    return ArxivSearchResult(
+                        found=True,
+                        arxiv_id=arxiv_id,
+                        arxiv_title=arxiv_title,
+                        confidence=title_similarity,
+                        search_method="title_high_confidence"
+                    )
+                
+                # Medium confidence - validate with abstract
+                elif title_similarity >= self.title_threshold:
+                    if (paper.abstract and arxiv_abstract and 
+                        self._abstracts_similar(paper.abstract, arxiv_abstract)):
+                        
+                        self.search_stats['successful_matches'] += 1
+                        return ArxivSearchResult(
+                            found=True,
+                            arxiv_id=arxiv_id,
+                            arxiv_title=arxiv_title,
+                            confidence=title_similarity,
+                            search_method="title_with_abstract_validation"
+                        )
+                    elif not paper.abstract:
+                        # No abstract to validate, accept medium confidence
+                        self.search_stats['successful_matches'] += 1
+                        return ArxivSearchResult(
+                            found=True,
+                            arxiv_id=arxiv_id,
+                            arxiv_title=arxiv_title,
+                            confidence=title_similarity,
+                            search_method="title_medium_confidence"
+                        )
+        
+        except Exception as e:
+            logger.error(f"Error in title search: {e}")
+            return ArxivSearchResult(
+                found=False,
+                error_message=f"Title search failed: {e}"
+            )
+        
+        return ArxivSearchResult(
+            found=False,
+            error_message="No matching papers found by title",
+            search_method="title_search_failed"
+        )
+    
+    def _search_by_abstract(self, paper: PaperMetadata) -> ArxivSearchResult:
+        """
+        Search arXiv using abstract content.
+        
+        Args:
+            paper: Paper metadata with abstract
+        
+        Returns:
+            ArxivSearchResult
+        """
+        # Extract meaningful snippet from abstract
+        abstract_snippet = self._extract_abstract_snippet(paper.abstract)
+        if not abstract_snippet:
+            return ArxivSearchResult(
+                found=False,
+                error_message="Could not extract meaningful abstract snippet"
+            )
+        
+        # Search in all fields
+        query = f'all:"{abstract_snippet}"'
+        
+        logger.debug(f"Abstract search query: {query}")
+        
+        try:
+            results = self._execute_arxiv_search(query, max_results=5)
+            
+            for arxiv_id, arxiv_title, arxiv_abstract in results:
+                # Check abstract similarity
+                if self._abstracts_similar(paper.abstract, arxiv_abstract):
+                    # Also check title for additional confidence
+                    title_similarity = self._calculate_title_similarity(
+                        paper.title, arxiv_title
+                    )
+                    
+                    confidence = max(title_similarity, 0.7)  # Boost confidence for abstract match
+                    
+                    self.search_stats['successful_matches'] += 1
+                    return ArxivSearchResult(
+                        found=True,
+                        arxiv_id=arxiv_id,
+                        arxiv_title=arxiv_title,
+                        confidence=confidence,
+                        search_method="abstract_search"
+                    )
+        
+        except Exception as e:
+            logger.error(f"Error in abstract search: {e}")
+        
+        return ArxivSearchResult(
+            found=False,
+            error_message="No matching papers found by abstract",
+            search_method="abstract_search_failed"
+        )
+    
+    def _google_search_fallback(self, paper: PaperMetadata) -> ArxivSearchResult:
+        """
+        Use Google search as fallback to find papers on arXiv.
+        
+        Args:
+            paper: Paper metadata
+        
+        Returns:
+            ArxivSearchResult
+        """
+        if not google_search:
+            return ArxivSearchResult(
+                found=False,
+                error_message="Google search not available"
+            )
+        
+        self.search_stats['google_searches'] += 1
+        
+        # Create Google search query
+        query = f'"{paper.title}" site:arxiv.org'
+        
+        logger.debug(f"Google search query: {query}")
+        
+        try:
+            for url in google_search(query, num_results=5):
+                # Extract arXiv ID from URL
+                arxiv_id = self._extract_arxiv_id_from_url(url)
+                if not arxiv_id:
+                    continue
+                
+                # Get paper info from arXiv
+                arxiv_info = self._get_paper_info_by_id(arxiv_id)
+                if not arxiv_info:
+                    continue
+                
+                _, arxiv_title, arxiv_abstract = arxiv_info
+                
+                # Validate with abstract (50% threshold for Google fallback)
+                if (paper.abstract and arxiv_abstract and 
+                    self._abstracts_similar(paper.abstract, arxiv_abstract, threshold=0.5)):
+                    
+                    self.search_stats['successful_matches'] += 1
+                    return ArxivSearchResult(
+                        found=True,
+                        arxiv_id=arxiv_id,
+                        arxiv_title=arxiv_title,
+                        confidence=0.6,  # Lower confidence for Google search
+                        search_method="google_search"
+                    )
+        
+        except Exception as e:
+            logger.error(f"Error in Google search: {e}")
+        
+        return ArxivSearchResult(
+            found=False,
+            error_message="Google search failed to find matching paper",
+            search_method="google_search_failed"
+        )
+    
+    def _execute_arxiv_search(self, query: str, max_results: int = 10) -> List[Tuple[str, str, str]]:
+        """
+        Execute search query against arXiv API.
+        
+        Args:
+            query: Search query string
+            max_results: Maximum results to return
+        
+        Returns:
+            List of tuples (arxiv_id, title, abstract)
+        """
+        self.search_stats['api_calls'] += 1
+        
+        params = {
+            'search_query': query,
+            'start': 0,
+            'max_results': max_results
+        }
+        
+        logger.debug(f"ArXiv API call: {query}")
+        
+        response = requests.get(self.api_base_url, params=params)
+        response.raise_for_status()
+        
+        # Parse XML response
+        root = ET.fromstring(response.content)
+        entries = root.findall('{http://www.w3.org/2005/Atom}entry')
+        
+        results = []
+        for entry in entries:
+            try:
+                # Extract arXiv ID from URL
+                id_url = entry.find('{http://www.w3.org/2005/Atom}id').text
+                arxiv_id = self._extract_arxiv_id_from_url(id_url)
+                if not arxiv_id:
+                    continue
+                
+                title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip()
+                abstract = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip()
+                
+                results.append((arxiv_id, title, abstract))
+                
+            except Exception as e:
+                logger.warning(f"Error parsing arXiv entry: {e}")
+                continue
+        
+        # Add delay to be respectful to arXiv servers
+        time.sleep(self.delay)
+        
+        return results
+    
+    def _get_paper_info_by_id(self, arxiv_id: str) -> Optional[Tuple[str, str, str]]:
+        """
+        Get paper information directly by arXiv ID.
+        
+        Args:
+            arxiv_id: arXiv identifier
+        
+        Returns:
+            Tuple of (arxiv_id, title, abstract) or None
+        """
+        params = {
+            'id_list': arxiv_id,
+            'max_results': 1
+        }
+        
+        try:
+            response = requests.get(self.api_base_url, params=params)
+            
+            # Handle old format papers
+            if response.status_code == 400:
+                params = {'search_query': f'id:{arxiv_id}', 'max_results': 1}
+                response = requests.get(self.api_base_url, params=params)
+            
+            response.raise_for_status()
+            
+            root = ET.fromstring(response.content)
+            entry = root.find('{http://www.w3.org/2005/Atom}entry')
+            
+            if entry is not None:
+                title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip()
+                abstract = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip()
+                return arxiv_id, title, abstract
+        
+        except Exception as e:
+            logger.error(f"Error getting info for arXiv ID {arxiv_id}: {e}")
+        
+        return None
+    
+    def _clean_title_for_search(self, title: str) -> str:
+        """Clean title for arXiv search."""
+        if not title:
+            return ""
+        
+        # Remove special characters that break queries
+        clean_title = re.sub(r'[:\.\(\)\[\]"\'`]', '', title)
+        
+        # Remove LaTeX commands
+        clean_title = re.sub(r'\\[a-zA-Z]*\{([^}]*)\}', r'\1', clean_title)
+        clean_title = re.sub(r'\\["\']', '', clean_title)
+        clean_title = re.sub(r'\\[a-zA-Z]+', '', clean_title)
+        
+        # Replace hyphens with spaces
+        clean_title = clean_title.replace("-", " ")
+        
+        # Normalize whitespace
+        clean_title = re.sub(r'\s+', ' ', clean_title).strip()
+        
+        return clean_title
+    
+    def _extract_abstract_snippet(self, abstract: str) -> Optional[str]:
+        """Extract a meaningful snippet from abstract for search."""
+        if not abstract or len(abstract.strip()) < 20:
+            return None
+        
+        # Clean abstract
+        clean_abstract = re.sub(r'[^\w\s]', ' ', abstract)
+        clean_abstract = re.sub(r'\s+', ' ', clean_abstract).strip()
+        
+        # Try to find first sentence
+        sentences = re.split(r'[.!?]+', clean_abstract)
+        if sentences and len(sentences[0].strip()) >= 20:
+            snippet = sentences[0].strip()[:60]
+        else:
+            # Take first 50 characters of meaningful words
+            words = clean_abstract.split()[:10]
+            snippet = ' '.join(words)[:50]
+        
+        return snippet.strip() if len(snippet.strip()) >= 10 else None
+    
+    def _calculate_title_similarity(self, title1: str, title2: str) -> float:
+        """Calculate similarity between two titles."""
+        words1 = set(re.findall(r'\w+', title1.lower()))
+        words2 = set(re.findall(r'\w+', title2.lower()))
+        
+        if len(words1) == 0 or len(words2) == 0:
+            return 0.0
+        
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        return intersection / union if union > 0 else 0.0
+    
+    def _abstracts_similar(self, abstract1: str, abstract2: str, threshold: float = None) -> bool:
+        """Check if two abstracts are similar enough."""
+        if threshold is None:
+            threshold = self.abstract_threshold
+        
+        words1 = set(re.findall(r'\w+', abstract1.lower()))
+        words2 = set(re.findall(r'\w+', abstract2.lower()))
+        
+        if len(words1) == 0 or len(words2) == 0:
+            return False
+        
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        similarity = intersection / union if union > 0 else 0
+        return similarity >= threshold
+    
+    def _extract_arxiv_id_from_url(self, url: str) -> Optional[str]:
+        """Extract arXiv ID from URL."""
+        if not url or 'arxiv.org' not in url:
+            return None
+        
+        # Handle different URL formats
+        patterns = [
+            r'/abs/([^/\s]+)',
+            r'/pdf/([^/\s]+)',
+            r'arxiv\.org/[^/]*/([^/\s]+)'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                arxiv_part = match.group(1)
+                # Clean up
+                arxiv_part = re.sub(r'\.pdf$', '', arxiv_part)
+                if 'v' in arxiv_part and arxiv_part.split('v')[-1].isdigit():
+                    arxiv_part = arxiv_part.split('v')[0]
+                
+                # Validate format
+                if (re.match(r'\d{4}\.\d{4,5}', arxiv_part) or 
+                    re.match(r'[a-z-]+/\d{7}', arxiv_part)):
+                    return arxiv_part
+        
+        return None
+    
+    def download_paper(self, arxiv_id: str, output_dir: Path) -> DownloadResult:
+        """
+        Download PDF and TEX files for a paper.
+        
+        Args:
+            arxiv_id: arXiv identifier
+            output_dir: Directory to save files
+        
+        Returns:
+            DownloadResult with download status
+        """
+        logger.info(f"Downloading paper: {arxiv_id}")
+        
+        # Ensure output directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Clean arXiv ID for filename
+        clean_id = clean_filename(arxiv_id)
+        
+        result = DownloadResult()
+        
+        # Download PDF
+        pdf_path = output_dir / f"{clean_id}.pdf"
+        pdf_urls = [
+            f"https://arxiv.org/pdf/{arxiv_id}.pdf",
+            f"https://arxiv.org/pdf/{arxiv_id}"
+        ]
+        
+        for pdf_url in pdf_urls:
+            try:
+                logger.debug(f"Trying PDF download: {pdf_url}")
+                response = requests.get(pdf_url, stream=True, timeout=30)
+                response.raise_for_status()
+                
+                with open(pdf_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                result.pdf_downloaded = True
+                result.pdf_path = str(pdf_path)
+                logger.info(f"PDF downloaded: {pdf_path}")
+                break
+                
+            except Exception as e:
+                logger.warning(f"PDF download failed for {pdf_url}: {e}")
+        
+        # Download TEX source
+        tex_urls = [
+            f"https://arxiv.org/e-print/{arxiv_id}",
+            f"https://arxiv.org/src/{arxiv_id}"
+        ]
+        
+        tar_path = output_dir / f"{clean_id}.tar.gz"
+        
+        for tex_url in tex_urls:
+            try:
+                logger.debug(f"Trying TEX download: {tex_url}")
+                response = requests.get(tex_url, stream=True, timeout=30)
+                response.raise_for_status()
+                
+                with open(tar_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                # Extract main tex file
+                extracted_tex = extract_tar_archive(tar_path, output_dir, clean_id)
+                if extracted_tex:
+                    result.tex_downloaded = True
+                    result.tex_path = str(extracted_tex)
+                    logger.info(f"TEX downloaded and extracted: {extracted_tex}")
+                
+                # Clean up tar file
+                if tar_path.exists():
+                    tar_path.unlink()
+                break
+                
+            except Exception as e:
+                logger.warning(f"TEX download failed for {tex_url}: {e}")
+        
+        # Add respectful delay
+        time.sleep(self.delay)
+        
+        if not result.pdf_downloaded and not result.tex_downloaded:
+            result.error_message = "Failed to download both PDF and TEX files"
+        
+        return result
+    
+    def get_search_statistics(self) -> Dict[str, Any]:
+        """Get search statistics."""
+        return self.search_stats.copy()
+    
+    def reset_statistics(self) -> None:
+        """Reset search statistics."""
+        self.search_stats = {
+            'api_calls': 0,
+            'google_searches': 0,
+            'successful_matches': 0,
+            'failed_matches': 0
+        }
