@@ -9,6 +9,7 @@ your_venv_folder_name/
 
 # Exlude literature files
 documents/literature/
+documents/biblio/
 
 # Python
 __pycache__/

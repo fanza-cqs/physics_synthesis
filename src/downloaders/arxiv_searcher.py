@@ -347,12 +347,20 @@ class ArxivSearcher:
                 error_message="Google API credentials not available"
             )
         
+        # ADD THIS LOG
+        print(f"\n🔍 GOOGLE FALLBACK ACTIVATED for: {paper.title[:50]}...")
+        logger.info(f"🔍 Google Custom Search API activated for: {paper.title[:50]}...")
+    
+
         self.search_stats['google_searches'] += 1
         
         try:
             query = paper.title
             logger.debug(f"Google Custom Search API fallback for: {paper.title[:50]}...")
             
+            # ADD THIS LOG
+            print(f"📡 Making Google API request with query: {query[:50]}...")
+
             # Google Custom Search API endpoint
             search_url = "https://www.googleapis.com/customsearch/v1"
             
@@ -370,6 +378,9 @@ class ArxivSearcher:
             
             search_results = response.json()
             
+            # ADD THIS LOG
+            print(f"📊 Google returned {len(search_results.get('items', []))} results")
+
             if 'items' not in search_results:
                 logger.info("No results from Google Custom Search API")
                 return ArxivSearchResult(
