@@ -15,6 +15,7 @@ physics_pipeline_env/
 documents/literature/
 documents/biblio/
 # Exlude jupyter testing checkpoints
+notebooks/
 notebooks/testing_real_functionality.ipynb
 notebooks/.ipynb_checkpoints/*.ipynb
 
