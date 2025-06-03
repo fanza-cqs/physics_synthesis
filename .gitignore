@@ -5,6 +5,11 @@ physics_pipeline_env/
 .env/
 .venv/
 .ven
+.env
+.env.local
+.env.*.local
+
+
 
 # Exlude literature files
 documents/literature/

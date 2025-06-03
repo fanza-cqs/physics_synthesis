@@ -441,6 +441,7 @@ class ArxivSearcher:
                 'cx': self.google_search_engine_id,
                 'q': query,
                 'siteSearch': 'arxiv.org',
+                "siteSearchFilter": "i",
                 'num': 5,  # Get up to 5 results
                 'fields': 'items(link,title,snippet)'  # Only get the fields we need
             }

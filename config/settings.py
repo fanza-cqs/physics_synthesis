@@ -9,6 +9,12 @@ modify behavior without changing code throughout the application.
 import os
 from pathlib import Path
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+# This will look for .env in the current directory and parent directories
+# Auto-load .env in project root
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 class PipelineConfig:
     """Central configuration for the physics literature synthesis pipeline."""
@@ -34,38 +40,37 @@ class PipelineConfig:
         self.cache_file = self.project_root / "physics_knowledge_base.pkl"
         self.reports_folder = self.project_root / "reports"
         
-        # API Configuration
-        # API Configuration
+        # API Configuration - Now loaded from .env file
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         self.google_api_key = os.getenv("GOOGLE_API_KEY")
         self.google_search_engine_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
         
-        # Download settings
-        self.download_delay = 1.2  # Seconds between arXiv requests
-        self.max_retries = 3
-        self.timeout_seconds = 30
+        # Download settings - with .env overrides
+        self.download_delay = float(os.getenv("DOWNLOAD_DELAY", "1.2"))
+        self.max_retries = int(os.getenv("MAX_RETRIES", "3"))
+        self.timeout_seconds = int(os.getenv("TIMEOUT_SECONDS", "30"))
         
-        # Processing settings
-        self.chunk_size = 1000  # Words per text chunk
-        self.chunk_overlap = 200  # Word overlap between chunks
-        self.embedding_model = "all-MiniLM-L6-v2"
+        # Processing settings - with .env overrides
+        self.chunk_size = int(os.getenv("CHUNK_SIZE", "1000"))
+        self.chunk_overlap = int(os.getenv("CHUNK_OVERLAP", "200"))
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
         
         # Search settings
-        self.title_similarity_threshold = 0.6
-        self.abstract_similarity_threshold = 0.5
-        self.high_confidence_threshold = 0.9
+        self.title_similarity_threshold = float(os.getenv("TITLE_SIMILARITY_THRESHOLD", "0.6"))
+        self.abstract_similarity_threshold = float(os.getenv("ABSTRACT_SIMILARITY_THRESHOLD", "0.5"))
+        self.high_confidence_threshold = float(os.getenv("HIGH_CONFIDENCE_THRESHOLD", "0.9"))
         
-        # Chat settings
-        self.default_temperature = 0.3
-        self.max_context_chunks = 8
-        self.max_conversation_history = 20
-        self.claude_model = "claude-3-5-sonnet-20241022"
-        self.max_tokens = 4000
+        # Chat settings - with .env overrides
+        self.default_temperature = float(os.getenv("DEFAULT_TEMPERATURE", "0.3"))
+        self.max_context_chunks = int(os.getenv("MAX_CONTEXT_CHUNKS", "8"))
+        self.max_conversation_history = int(os.getenv("MAX_CONVERSATION_HISTORY", "20"))
+        self.claude_model = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+        self.max_tokens = int(os.getenv("MAX_TOKENS", "4000"))
         
         # File extensions to process
         self.supported_extensions = {'.pdf', '.tex', '.txt'}
         
-        # Apply any overrides
+        # Apply any overrides from config_dict
         if config_dict:
             self._apply_overrides(config_dict)
         
@@ -101,10 +106,24 @@ class PipelineConfig:
         """
         if not self.anthropic_api_key:
             raise ValueError(
-                "ANTHROPIC_API_KEY not found. Please set as environment variable "
+                "ANTHROPIC_API_KEY not found. Please set it in your .env file "
                 "or pass in config_dict."
             )
         return True
+    
+    def check_env_file(self) -> Dict[str, bool]:
+        """
+        Check which API keys are configured.
+        
+        Returns:
+            Dictionary showing which keys are set
+        """
+        return {
+            'anthropic_api_key': bool(self.anthropic_api_key),
+            'google_api_key': bool(self.google_api_key),
+            'google_search_engine_id': bool(self.google_search_engine_id),
+            'google_search_enabled': bool(self.google_api_key and self.google_search_engine_id)
+        }
     
     def get_arxiv_config(self) -> Dict[str, Any]:
         """Get configuration specific to arXiv downloading."""
@@ -139,13 +158,19 @@ class PipelineConfig:
     
     def __str__(self) -> str:
         """String representation of configuration."""
+        api_status = self.check_env_file()
         return f"""Physics Pipeline Configuration:
   Project Root: {self.project_root}
   Literature Folder: {self.literature_folder}
   Cache File: {self.cache_file}
   Embedding Model: {self.embedding_model}
   Claude Model: {self.claude_model}
-  API Keys: {'✓' if self.anthropic_api_key else '✗'} Anthropic
+  
+  API Keys Status:
+    ✓ Anthropic: {'Configured' if api_status['anthropic_api_key'] else 'Missing'}
+    {'✓' if api_status['google_api_key'] else '✗'} Google API: {'Configured' if api_status['google_api_key'] else 'Missing'}
+    {'✓' if api_status['google_search_engine_id'] else '✗'} Google Search Engine: {'Configured' if api_status['google_search_engine_id'] else 'Missing'}
+    {'✓' if api_status['google_search_enabled'] else '✗'} Google Search: {'Enabled' if api_status['google_search_enabled'] else 'Disabled'}
 """
 
 # Default configuration instance
