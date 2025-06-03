@@ -4,13 +4,14 @@ env/
 physics_pipeline_env/
 .env/
 .venv/
-# Add your specific folder name if different
-your_venv_folder_name/
+.ven
 
 # Exlude literature files
 documents/literature/
 documents/biblio/
+# Exlude jupyter testing checkpoints
 notebooks/testing_real_functionality.ipynb
+notebooks/.ipynb_checkpoints/*.ipynb
 
 # Python
 __pycache__/

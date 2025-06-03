@@ -54,7 +54,14 @@ class LiteratureDownloader:
         print(f"📁 Literature downloader initialized")
         print(f"   Output directory: {output_directory}")
         print(f"   Delay between downloads: {delay_between_downloads}s")
-        print(f"   ArXiv config: {arxiv_config}")
+
+        # SECURE: Don't log sensitive information
+        safe_config = arxiv_config.copy()
+        if 'google_api_key' in safe_config:
+            safe_config['google_api_key'] = '***HIDDEN***'
+    
+
+        print(f"   ArXiv config: {safe_config}")
         
         logger.info(f"Literature downloader initialized with output: {output_directory}")
     
