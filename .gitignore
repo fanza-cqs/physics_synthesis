@@ -20,6 +20,9 @@ notebooks/
 notebooks/testing_real_functionality.ipynb
 notebooks/.ipynb_checkpoints/*.ipynb
 
+# Exlude embedded literature
+*.pkl
+
 # Python
 __pycache__/
 *.pyc
