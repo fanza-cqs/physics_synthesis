@@ -10,6 +10,9 @@ Before starting work on a new feature, create a dedicated branch from the latest
 # Switch to the main branch
 git checkout main
 
+# Or check status
+git status
+
 # Pull the latest changes from remote main to ensure you're up-to-date
 git pull origin main
 
