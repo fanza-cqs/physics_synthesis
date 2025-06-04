@@ -14,6 +14,7 @@ physics_pipeline_env/
 # Exlude literature files
 documents/literature/
 documents/biblio/
+documents/manual_references/
 # Exlude jupyter testing checkpoints
 notebooks/
 notebooks/testing_real_functionality.ipynb
