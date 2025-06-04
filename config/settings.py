@@ -12,8 +12,6 @@ from typing import Dict, Any
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-# This will look for .env in the current directory and parent directories
-# Auto-load .env in project root
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 class PipelineConfig:
@@ -35,6 +33,9 @@ class PipelineConfig:
         self.literature_folder = self.documents_root / "literature"
         self.your_work_folder = self.documents_root / "your_work"
         self.current_drafts_folder = self.documents_root / "current_drafts"
+        
+        # NEW: Manual references folder
+        self.manual_references_folder = self.documents_root / "manual_references"
         
         # Cache and output
         self.cache_file = self.project_root / "physics_knowledge_base.pkl"
@@ -91,6 +92,7 @@ class PipelineConfig:
             self.literature_folder,
             self.your_work_folder,
             self.current_drafts_folder,
+            self.manual_references_folder,  # NEW: Create manual references folder
             self.reports_folder
         ]
         
@@ -156,12 +158,27 @@ class PipelineConfig:
             'max_history': self.max_conversation_history
         }
     
+    def get_document_folders(self) -> Dict[str, Path]:
+        """Get all document folders with their source types."""
+        return {
+            'literature': self.literature_folder,
+            'your_work': self.your_work_folder,
+            'current_drafts': self.current_drafts_folder,
+            'manual_references': self.manual_references_folder  # NEW
+        }
+    
     def __str__(self) -> str:
         """String representation of configuration."""
         api_status = self.check_env_file()
         return f"""Physics Pipeline Configuration:
   Project Root: {self.project_root}
-  Literature Folder: {self.literature_folder}
+  
+  Document Folders:
+    Literature: {self.literature_folder}
+    Your Work: {self.your_work_folder}
+    Current Drafts: {self.current_drafts_folder}
+    Manual References: {self.manual_references_folder}
+  
   Cache File: {self.cache_file}
   Embedding Model: {self.embedding_model}
   Claude Model: {self.claude_model}

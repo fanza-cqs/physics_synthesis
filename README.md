@@ -389,3 +389,10 @@ If you use this pipeline in your research, please cite:
 ---
 
 **Happy researching! 🚀🔬**
+
+### Manual References
+
+To add papers not available through arXiv:
+1. Copy PDF, TEX, or TXT files to `documents/manual_references/`
+2. They will be automatically included when building the knowledge base
+

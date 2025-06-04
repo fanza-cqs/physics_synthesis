@@ -51,7 +51,8 @@ class KnowledgeBase:
     def build_from_directories(self, 
                               literature_folder: Path,
                               your_work_folder: Path,
-                              current_drafts_folder: Optional[Path] = None) -> Dict[str, Any]:
+                              current_drafts_folder: Optional[Path] = None,
+                              manual_references_folder: Optional[Path] = None) -> Dict[str, Any]:
         """
         Build knowledge base from document directories.
         
@@ -59,6 +60,7 @@ class KnowledgeBase:
             literature_folder: Folder containing literature papers
             your_work_folder: Folder containing user's previous work
             current_drafts_folder: Optional folder with current drafts
+            manual_references_folder: Optional folder with manually added references
         
         Returns:
             Dictionary with build statistics
@@ -98,6 +100,15 @@ class KnowledgeBase:
             all_documents.extend(draft_docs)
             logger.info(f"Added {len(draft_docs)} documents from current drafts")
         
+        # NEW: Process manual references folder if provided
+        if manual_references_folder and manual_references_folder.exists():
+            logger.info(f"Processing manual references folder: {manual_references_folder}")
+            manual_docs = self.document_processor.process_directory(
+                manual_references_folder, "manual_references"
+            )
+            all_documents.extend(manual_docs)
+            logger.info(f"Added {len(manual_docs)} documents from manual references")
+        
         if not all_documents:
             logger.warning("No documents were found to process")
             return {
@@ -123,13 +134,13 @@ class KnowledgeBase:
         
         return stats
     
-    def add_document(self, file_path: Path, source_type: str) -> bool:
+    def add_document(self, file_path: Path, source_type: str = "manual_references") -> bool:
         """
         Add a single document to the knowledge base.
         
         Args:
             file_path: Path to the document file
-            source_type: Type of source (literature, your_work, etc.)
+            source_type: Type of source (defaults to manual_references)
         
         Returns:
             True if document was successfully added
@@ -149,6 +160,47 @@ class KnowledgeBase:
         
         logger.info(f"Successfully added document: {file_path}")
         return True
+    
+    def add_manual_reference(self, file_path: Path) -> bool:
+        """
+        Add a manually provided reference to the knowledge base.
+        
+        Args:
+            file_path: Path to the reference file
+        
+        Returns:
+            True if reference was successfully added
+        """
+        return self.add_document(file_path, "manual_references")
+    
+    def batch_add_manual_references(self, file_paths: List[Path]) -> Dict[str, int]:
+        """
+        Add multiple manual references at once.
+        
+        Args:
+            file_paths: List of paths to reference files
+        
+        Returns:
+            Dictionary with success/failure counts
+        """
+        logger.info(f"Adding {len(file_paths)} manual references")
+        
+        successful = 0
+        failed = 0
+        
+        for file_path in file_paths:
+            if self.add_manual_reference(file_path):
+                successful += 1
+            else:
+                failed += 1
+        
+        logger.info(f"Batch add complete: {successful} successful, {failed} failed")
+        
+        return {
+            'successful': successful,
+            'failed': failed,
+            'total': len(file_paths)
+        }
     
     def search(self, query: str, top_k: int = 10) -> List[SearchResult]:
         """
@@ -283,9 +335,12 @@ class KnowledgeBase:
             'chunk_count': len(chunks)
         }
     
-    def list_documents(self) -> List[Dict[str, Any]]:
+    def list_documents(self, source_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        List all documents in the knowledge base.
+        List all documents in the knowledge base, optionally filtered by source type.
+        
+        Args:
+            source_type: Optional source type to filter by
         
         Returns:
             List of dictionaries with document information
@@ -294,6 +349,10 @@ class KnowledgeBase:
         
         for doc in self.processed_documents:
             if doc.processing_success:
+                # Filter by source type if specified
+                if source_type and doc.source_type != source_type:
+                    continue
+                
                 chunks = self.embeddings_manager.get_document_chunks(doc.file_path)
                 documents_info.append({
                     'file_name': doc.file_name,
@@ -304,6 +363,15 @@ class KnowledgeBase:
                 })
         
         return documents_info
+    
+    def list_manual_references(self) -> List[Dict[str, Any]]:
+        """
+        List all manually added references.
+        
+        Returns:
+            List of dictionaries with manual reference information
+        """
+        return self.list_documents(source_type="manual_references")
     
     def get_source_summary(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -333,3 +401,36 @@ class KnowledgeBase:
                 source_summary[source_type]['total_words'] += doc.word_count
         
         return source_summary
+    
+    def remove_document(self, file_path: str) -> bool:
+        """
+        Remove a document from the knowledge base.
+        
+        Note: This requires rebuilding the embeddings database.
+        
+        Args:
+            file_path: Path to the document to remove
+        
+        Returns:
+            True if document was removed successfully
+        """
+        # Find and remove from processed documents
+        original_count = len(self.processed_documents)
+        self.processed_documents = [
+            doc for doc in self.processed_documents 
+            if doc.file_path != file_path
+        ]
+        
+        if len(self.processed_documents) == original_count:
+            logger.warning(f"Document not found in knowledge base: {file_path}")
+            return False
+        
+        # Rebuild embeddings without the removed document
+        logger.info(f"Rebuilding embeddings after removing {file_path}")
+        self.embeddings_manager.clear_database()
+        
+        successful_docs = [doc for doc in self.processed_documents if doc.processing_success]
+        self.embeddings_manager.add_documents(successful_docs)
+        
+        logger.info(f"Successfully removed document: {file_path}")
+        return True
