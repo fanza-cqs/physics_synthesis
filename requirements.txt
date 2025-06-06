@@ -2,6 +2,8 @@
 numpy>=1.21.0,<2.0
 pandas>=1.3.0
 scikit-learn>=1.0.0
+pyzotero
+selenium
 
 # PDF and text processing
 PyPDF2>=2.0.0

@@ -2,8 +2,8 @@
 """
 Configuration settings for the Physics Literature Synthesis Pipeline.
 
-This module centralizes all configuration parameters, making it easy to
-modify behavior without changing code throughout the application.
+This module centralizes all configuration parameters, including new Zotero integration
+settings to replace the BibTeX-based approach.
 """
 
 import os
@@ -29,13 +29,16 @@ class PipelineConfig:
         self.documents_root = self.project_root / "documents"
         
         # Document folders
-        self.biblio_folder = self.documents_root / "biblio"
+        self.biblio_folder = self.documents_root / "biblio"  # Keep for backward compatibility
         self.literature_folder = self.documents_root / "literature"
         self.your_work_folder = self.documents_root / "your_work"
         self.current_drafts_folder = self.documents_root / "current_drafts"
-        
-        # NEW: Manual references folder
         self.manual_references_folder = self.documents_root / "manual_references"
+        
+        # NEW: Zotero integration folders
+        self.zotero_sync_folder = self.documents_root / "zotero_sync"
+        self.zotero_pdfs_folder = self.zotero_sync_folder / "pdfs"
+        self.zotero_other_files_folder = self.zotero_sync_folder / "other_files"
         
         # Cache and output
         self.cache_file = self.project_root / "physics_knowledge_base.pkl"
@@ -45,6 +48,17 @@ class PipelineConfig:
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         self.google_api_key = os.getenv("GOOGLE_API_KEY")
         self.google_search_engine_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
+        
+        # NEW: Zotero API Configuration
+        self.zotero_api_key = os.getenv("ZOTERO_API_KEY")
+        self.zotero_library_id = os.getenv("ZOTERO_LIBRARY_ID")
+        self.zotero_library_type = os.getenv("ZOTERO_LIBRARY_TYPE", "user")  # "user" or "group"
+        
+        # Zotero sync settings
+        self.zotero_download_attachments = bool(os.getenv("ZOTERO_DOWNLOAD_ATTACHMENTS", "true").lower() == "true")
+        self.zotero_file_types = set(os.getenv("ZOTERO_FILE_TYPES", "application/pdf,text/plain").split(","))
+        self.zotero_overwrite_files = bool(os.getenv("ZOTERO_OVERWRITE_FILES", "false").lower() == "true")
+        self.zotero_sync_collections = os.getenv("ZOTERO_SYNC_COLLECTIONS", "").split(",") if os.getenv("ZOTERO_SYNC_COLLECTIONS") else None
         
         # Download settings - with .env overrides
         self.download_delay = float(os.getenv("DOWNLOAD_DELAY", "1.2"))
@@ -92,7 +106,11 @@ class PipelineConfig:
             self.literature_folder,
             self.your_work_folder,
             self.current_drafts_folder,
-            self.manual_references_folder,  # NEW: Create manual references folder
+            self.manual_references_folder,
+            # NEW: Zotero directories
+            self.zotero_sync_folder,
+            self.zotero_pdfs_folder,
+            self.zotero_other_files_folder,
             self.reports_folder
         ]
         
@@ -113,6 +131,32 @@ class PipelineConfig:
             )
         return True
     
+    def validate_zotero_config(self) -> bool:
+        """
+        Validate Zotero configuration.
+        
+        Returns:
+            bool: True if Zotero is properly configured
+        """
+        if not self.zotero_api_key:
+            raise ValueError(
+                "ZOTERO_API_KEY not found. Please set it in your .env file. "
+                "Get your API key from: https://www.zotero.org/settings/keys"
+            )
+        
+        if not self.zotero_library_id:
+            raise ValueError(
+                "ZOTERO_LIBRARY_ID not found. Please set it in your .env file. "
+                "Find your library ID at: https://www.zotero.org/settings/keys"
+            )
+        
+        if self.zotero_library_type not in ["user", "group"]:
+            raise ValueError(
+                "ZOTERO_LIBRARY_TYPE must be either 'user' or 'group'"
+            )
+        
+        return True
+    
     def check_env_file(self) -> Dict[str, bool]:
         """
         Check which API keys are configured.
@@ -124,7 +168,11 @@ class PipelineConfig:
             'anthropic_api_key': bool(self.anthropic_api_key),
             'google_api_key': bool(self.google_api_key),
             'google_search_engine_id': bool(self.google_search_engine_id),
-            'google_search_enabled': bool(self.google_api_key and self.google_search_engine_id)
+            'google_search_enabled': bool(self.google_api_key and self.google_search_engine_id),
+            # NEW: Zotero status
+            'zotero_api_key': bool(self.zotero_api_key),
+            'zotero_library_id': bool(self.zotero_library_id),
+            'zotero_configured': bool(self.zotero_api_key and self.zotero_library_id)
         }
     
     def get_arxiv_config(self) -> Dict[str, Any]:
@@ -138,6 +186,19 @@ class PipelineConfig:
             'high_confidence_threshold': self.high_confidence_threshold,
             'google_api_key': self.google_api_key,
             'google_search_engine_id': self.google_search_engine_id
+        }
+    
+    def get_zotero_config(self) -> Dict[str, Any]:
+        """Get configuration specific to Zotero integration."""
+        return {
+            'api_key': self.zotero_api_key,
+            'library_id': self.zotero_library_id,
+            'library_type': self.zotero_library_type,
+            'download_attachments': self.zotero_download_attachments,
+            'file_types': self.zotero_file_types,
+            'overwrite_files': self.zotero_overwrite_files,
+            'sync_collections': self.zotero_sync_collections,
+            'output_directory': self.zotero_sync_folder
         }
     
     def get_embedding_config(self) -> Dict[str, Any]:
@@ -164,7 +225,18 @@ class PipelineConfig:
             'literature': self.literature_folder,
             'your_work': self.your_work_folder,
             'current_drafts': self.current_drafts_folder,
-            'manual_references': self.manual_references_folder  # NEW
+            'manual_references': self.manual_references_folder,
+            'zotero_pdfs': self.zotero_pdfs_folder,
+            'zotero_other_files': self.zotero_other_files_folder
+        }
+    
+    def get_literature_sources(self) -> Dict[str, str]:
+        """Get available literature source types and their descriptions."""
+        return {
+            'bibtex': 'Legacy BibTeX files (deprecated)',
+            'arxiv': 'ArXiv downloads via API',
+            'zotero': 'Zotero library synchronization (recommended)',
+            'manual': 'Manually added references'
         }
     
     def __str__(self) -> str:
@@ -178,6 +250,8 @@ class PipelineConfig:
     Your Work: {self.your_work_folder}
     Current Drafts: {self.current_drafts_folder}
     Manual References: {self.manual_references_folder}
+    Zotero PDFs: {self.zotero_pdfs_folder}
+    Zotero Other Files: {self.zotero_other_files_folder}
   
   Cache File: {self.cache_file}
   Embedding Model: {self.embedding_model}
@@ -188,6 +262,15 @@ class PipelineConfig:
     {'✓' if api_status['google_api_key'] else '✗'} Google API: {'Configured' if api_status['google_api_key'] else 'Missing'}
     {'✓' if api_status['google_search_engine_id'] else '✗'} Google Search Engine: {'Configured' if api_status['google_search_engine_id'] else 'Missing'}
     {'✓' if api_status['google_search_enabled'] else '✗'} Google Search: {'Enabled' if api_status['google_search_enabled'] else 'Disabled'}
+    {'✓' if api_status['zotero_api_key'] else '✗'} Zotero API: {'Configured' if api_status['zotero_api_key'] else 'Missing'}
+    {'✓' if api_status['zotero_library_id'] else '✗'} Zotero Library: {'Configured' if api_status['zotero_library_id'] else 'Missing'}
+    {'✓' if api_status['zotero_configured'] else '✗'} Zotero Integration: {'Enabled' if api_status['zotero_configured'] else 'Disabled'}
+  
+  Zotero Settings:
+    Library Type: {self.zotero_library_type}
+    Library ID: {self.zotero_library_id or 'Not set'}
+    Download Attachments: {self.zotero_download_attachments}
+    File Types: {', '.join(self.zotero_file_types) if self.zotero_file_types else 'None'}
 """
 
 # Default configuration instance
