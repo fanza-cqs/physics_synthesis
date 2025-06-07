@@ -15,6 +15,7 @@ physics_pipeline_env/
 documents/literature/
 documents/biblio/
 documents/manual_references/
+documents/zotero_sync/
 # Exlude jupyter testing checkpoints
 notebooks/
 notebooks/testing_real_functionality.ipynb
