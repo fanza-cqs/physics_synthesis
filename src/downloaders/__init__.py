@@ -6,7 +6,7 @@ from .bibtex_parser import BibtexParser, PaperMetadata
 from .arxiv_searcher import ArxivSearcher, ArxivSearchResult, DownloadResult
 from .literature_downloader import LiteratureDownloader, PaperDownloadResult
 
-# Original Zotero integration
+# Basic Zotero integration
 try:
     from .zotero_manager import (
         ZoteroLibraryManager, 
@@ -22,7 +22,7 @@ try:
 except ImportError:
     ZOTERO_AVAILABLE = False
 
-# Enhanced Zotero integration (NEW)
+# Enhanced Zotero integration with DOI downloads
 try:
     from .enhanced_zotero_manager import (
         EnhancedZoteroLibraryManager,
@@ -36,7 +36,7 @@ except ImportError:
     ENHANCED_ZOTERO_AVAILABLE = False
     SELENIUM_AVAILABLE = False
 
-# PDF Integration system (NEW) - UPDATED: Removed upload_replace components
+# PDF Integration system
 try:
     from .zotero_pdf_integrator_fixed import (
         integrate_pdfs_with_zotero_fixed,
@@ -47,7 +47,6 @@ try:
         get_available_modes,
         setup_download_only_mode,
         setup_attach_mode,
-        # setup_upload_replace_mode  # REMOVED - disabled mode
     )
     PDF_INTEGRATION_AVAILABLE = True
 except ImportError:
@@ -62,6 +61,7 @@ __all__ = [
     'DownloadResult',
     'LiteratureDownloader',
     'PaperDownloadResult',
+    
     # Availability flags
     'ZOTERO_AVAILABLE',
     'ENHANCED_ZOTERO_AVAILABLE',
@@ -69,7 +69,7 @@ __all__ = [
     'SELENIUM_AVAILABLE'
 ]
 
-# Add original Zotero exports if available
+# Add basic Zotero exports if available
 if ZOTERO_AVAILABLE:
     __all__.extend([
         'ZoteroLibraryManager',
@@ -89,7 +89,7 @@ if ENHANCED_ZOTERO_AVAILABLE:
         'EnhancedZoteroLiteratureSyncer'
     ])
 
-# Add PDF integration exports if available - UPDATED: Removed upload_replace components
+# Add PDF integration exports if available
 if PDF_INTEGRATION_AVAILABLE:
     __all__.extend([
         'integrate_pdfs_with_zotero_fixed',
@@ -100,7 +100,6 @@ if PDF_INTEGRATION_AVAILABLE:
         'get_available_modes',
         'setup_download_only_mode',
         'setup_attach_mode',
-        # 'setup_upload_replace_mode'  # REMOVED - disabled mode
     ])
 
 def get_available_downloaders():
@@ -111,27 +110,27 @@ def get_available_downloaders():
         Dictionary with available downloaders and their status
     """
     return {
-        'bibtex_arxiv': {
-            'available': True,
-            'description': 'Legacy BibTeX parsing with arXiv downloads',
-            'status': 'deprecated',
-            'recommended': False
-        },
         'arxiv_direct': {
             'available': True,
             'description': 'Direct arXiv API downloads',
             'status': 'active',
             'recommended': False
         },
+        'bibtex_arxiv': {
+            'available': True,
+            'description': 'Legacy BibTeX parsing with arXiv downloads',
+            'status': 'legacy',
+            'recommended': False
+        },
         'zotero': {
             'available': ZOTERO_AVAILABLE,
-            'description': 'Zotero Web API integration',
+            'description': 'Basic Zotero Web API integration',
             'status': 'active' if ZOTERO_AVAILABLE else 'unavailable',
             'recommended': ZOTERO_AVAILABLE and not ENHANCED_ZOTERO_AVAILABLE
         },
         'enhanced_zotero': {
             'available': ENHANCED_ZOTERO_AVAILABLE,
-            'description': 'Enhanced Zotero with DOI-based PDF downloads',
+            'description': 'Enhanced Zotero with DOI-based PDF downloads and integration',
             'status': 'active' if ENHANCED_ZOTERO_AVAILABLE else 'unavailable',
             'recommended': ENHANCED_ZOTERO_AVAILABLE
         },
@@ -143,12 +142,12 @@ def get_available_downloaders():
         }
     }
 
-def get_zotero_capabilities():
+def get_integration_capabilities():
     """
-    Get detailed information about Zotero integration capabilities.
+    Get detailed information about PDF integration capabilities.
     
     Returns:
-        Dictionary with Zotero feature availability
+        Dictionary with integration feature availability
     """
     return {
         'basic_zotero': {
@@ -168,7 +167,6 @@ def get_zotero_capabilities():
             'available': PDF_INTEGRATION_AVAILABLE,
             'features': [
                 'attach_to_existing',
-                # 'upload_and_replace',  # REMOVED - disabled mode
                 'download_only',
                 'metadata_preservation'
             ]
@@ -216,13 +214,13 @@ def create_literature_manager(source_type: str, config: dict):
         )
     
     elif source_type == 'manual':
-        # For manual uploads, return basic knowledge base integration
-        return None  # Handle in calling code
+        # For manual uploads, return None (handle in calling code)
+        return None
     
     else:
         raise ValueError(f"Unknown literature source type: {source_type}")
 
-def recommend_literature_source(config) -> str:
+def recommend_literature_source(config) -> dict:
     """
     Recommend the best literature source based on configuration.
     
@@ -230,7 +228,7 @@ def recommend_literature_source(config) -> str:
         config: Pipeline configuration
     
     Returns:
-        Recommended source type with explanation
+        Dictionary with recommended source and explanation
     """
     available = get_available_downloaders()
     
@@ -244,7 +242,7 @@ def recommend_literature_source(config) -> str:
             'features': [
                 'Automatic DOI-based PDF downloads',
                 'Multi-publisher support (APS, MDPI, Nature, arXiv)',
-                'PDF integration back to Zotero records (attach mode)',  # UPDATED
+                'PDF integration back to Zotero records',
                 'Knowledge base synchronization'
             ]
         }
@@ -282,7 +280,7 @@ def print_integration_status():
     print("📚 LITERATURE INTEGRATION STATUS")
     print("=" * 50)
     
-    capabilities = get_zotero_capabilities()
+    capabilities = get_integration_capabilities()
     
     for component, info in capabilities.items():
         status = "✅ Available" if info['available'] else "❌ Not Available"
@@ -292,13 +290,6 @@ def print_integration_status():
             for feature in info['features']:
                 print(f"   • {feature.replace('_', ' ').title()}")
         print()
-    
-    # UPDATED: Add information about disabled modes
-    print("❌ DISABLED FEATURES")
-    print("-" * 30)
-    print("• upload_replace mode (disabled due to API limitations)")
-    print("• Use 'attach' mode instead for reliable PDF integration")
-    print()
     
     print("💡 RECOMMENDATIONS")
     print("-" * 30)
