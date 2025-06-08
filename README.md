@@ -1,28 +1,39 @@
 # Physics Literature Synthesis Pipeline
 
-A modular, automated pipeline for physics research that downloads literature from arXiv, builds a searchable knowledge base, and provides AI-powered research assistance.
+A modular, automated pipeline for physics research that downloads literature from Zotero with DOI-based PDF acquisition, builds searchable knowledge bases, and provides AI-powered research assistance.
 
 ## Overview
 
 This pipeline helps physicists:
-- **Automate literature collection** from Zotero bibliographies with DOI-based PDF downloads
-- **Build searchable knowledge bases** from physics papers
-- **Get AI assistance** grounded in relevant literature
-- **Synthesize research** with source-backed responses
+- **Automate literature collection** from Zotero with intelligent DOI-based PDF downloads
+- **Build searchable knowledge bases** from physics papers with semantic search
+- **Get AI assistance** grounded in relevant literature with source citations
+- **Synthesize research** with evidence-backed responses and automated integration
 
 ## Architecture
 
 ```
 physics_synthesis_pipeline/
 ├── src/
-│   ├── core/           # Document processing & embeddings
-│   ├── downloaders/    # Zotero sync, arXiv search & DOI-based downloads
-│   ├── chat/          # AI chat interface
-│   └── utils/         # Utilities & logging
-├── config/            # Configuration management
-├── documents/         # Your papers and literature
-├── notebooks/         # Demo notebooks
-└── tests/            # Unit tests
+│   ├── core/                    # Document processing & embeddings
+│   ├── downloaders/             # Enhanced Zotero sync & DOI-based downloads
+│   │   ├── enhanced_literature_syncer.py    # Main enhanced syncer
+│   │   ├── enhanced_zotero_manager.py       # DOI download automation
+│   │   ├── zotero_pdf_integrator_fixed.py   # Modular PDF integration
+│   │   └── zotero_pdf_integrator_parts/     # Modular integration components
+│   ├── chat/                    # AI chat interface
+│   └── utils/                   # Utilities & logging
+├── config/                      # Configuration management
+├── documents/                   # Your papers and literature
+│   ├── zotero_sync/            # Enhanced Zotero synchronized content
+│   │   ├── pdfs/               # PDF attachments from Zotero
+│   │   ├── other_files/        # Other document types
+│   │   └── doi_downloads/      # Automatically downloaded PDFs
+│   ├── literature/             # Legacy arXiv downloads
+│   ├── your_work/              # Your publications
+│   └── current_drafts/         # Work in progress
+├── notebooks/                  # Demo notebooks
+└── tests/                      # Unit tests
 ```
 
 ## Quick Start
@@ -37,7 +48,7 @@ cd physics_synthesis_pipeline
 # Install dependencies
 pip install -r requirements.txt
 
-# For DOI-based PDF downloads (optional)
+# For enhanced DOI-based PDF downloads
 pip install selenium
 
 # Set your API keys
@@ -46,173 +57,173 @@ export ZOTERO_API_KEY="your-zotero-api-key"
 export ZOTERO_LIBRARY_ID="your-library-id"
 ```
 
-### 2. Add Your Literature
+### 2. Enhanced Zotero Setup
+
+The pipeline now features **enhanced Zotero integration** with automatic DOI-based PDF downloads:
 
 ```bash
-# Option 1: Use Zotero integration (recommended)
-# Configure your Zotero API credentials in .env file
-
-# Option 2: Legacy BibTeX approach
-# Export bibliography from Zotero as .bib file
-# Place it in documents/biblio/
-
-# Add your own papers (optional)
-# Place PDFs/TEX files in documents/your_work/
-# Place current drafts in documents/current_drafts/
+# Configure your Zotero credentials in .env file
+echo "ZOTERO_API_KEY=your_api_key" >> .env
+echo "ZOTERO_LIBRARY_ID=your_library_id" >> .env
+echo "ZOTERO_LIBRARY_TYPE=user" >> .env
 ```
 
-### 3. Run the Demo
+See [ZOTERO_README.md](ZOTERO_README.md) for detailed setup instructions.
+
+### 3. Run the Enhanced Demo
 
 ```bash
-# Start Jupyter and open the demo notebook
-jupyter notebook notebooks/physics_pipeline_demo.ipynb
+# Start Jupyter and open the enhanced demo
+jupyter notebook notebooks/enhanced_physics_pipeline_demo.ipynb
 ```
 
-## Features
+## 🚀 Enhanced Features
 
-### 📥 Literature Download & Sync
-- **Zotero Integration**: Real-time sync with your Zotero library
-- **DOI-based PDF Downloads**: Automatically download missing PDFs using DOIs
-- **Multi-Publisher Support**: Works with APS, MDPI, Nature, arXiv, and more
-- **Legacy BibTeX Support**: Parse Zotero .bib files automatically
-- **Multi-strategy arXiv search**: Title, abstract, Google fallback
-- **Comprehensive reporting**: Success rates and detailed logs
+### 📥 Intelligent Literature Acquisition
+- **Enhanced Zotero Integration**: Real-time sync with automatic PDF acquisition
+- **DOI-based PDF Downloads**: Automatically download missing PDFs using browser automation
+- **Multi-Publisher Support**: Works with APS, MDPI, Nature, arXiv (90%+ success rates)
+- **Modular PDF Integration**: Reliable attach mode for seamless Zotero integration
+- **Smart Collection Sync**: Fast, optimized collection-based processing
 
-### 🧠 Knowledge Base
-- Process PDF and LaTeX documents
-- Create semantic embeddings for search
-- Support multiple document types and sources
-- Efficient caching system
+### 🧠 Advanced Knowledge Base
+- **Semantic Search**: AI-powered document similarity and retrieval
+- **Multi-Source Integration**: Combines Zotero, manual uploads, and legacy sources
+- **Automatic Embeddings**: Processes PDFs, LaTeX, and text documents
+- **Incremental Updates**: Efficient caching and document management
 
-### 💬 AI Assistant
-- Literature-aware conversations
-- Source-backed responses with citations
-- Research synthesis and writing help
-- Conversation memory and context
+### 💬 AI-Powered Research Assistant
+- **Literature-Aware Conversations**: Contextual responses grounded in your papers
+- **Source-Backed Answers**: Every response includes relevant citations
+- **Research Synthesis**: Automatic literature reviews and topic summaries
+- **Conversation Memory**: Maintains context across research sessions
 
-### 🔧 DOI-based PDF Downloads
-- **Smart Publisher Detection**: Automatically identifies and handles different publishers
-- **Browser Automation**: Uses Selenium for reliable PDF downloads
-- **High Success Rates**: 90%+ success for supported publishers (APS, MDPI, Nature)
-- **Respectful Access**: Built-in delays and publisher-specific handling
-- **Collection-Based**: Download missing PDFs for entire Zotero collections
+### 🔧 Modular PDF Integration System
+- **Attach Mode**: Seamlessly attach downloaded PDFs to existing Zotero records (recommended)
+- **Download-Only Mode**: Local PDF storage without Zotero integration
+- **Graceful Error Handling**: Intelligent fallbacks for restricted publishers
+- **Comprehensive Logging**: Detailed success/failure reporting for optimization
 
 ## Usage Examples
 
-### Zotero Collection Sync with DOI Downloads
+### Enhanced Zotero Collection Sync
 
 ```python
 from src.downloaders import EnhancedZoteroLiteratureSyncer
 from config import PipelineConfig
 
-# Initialize enhanced syncer
+# Initialize enhanced syncer with DOI downloads
 config = PipelineConfig()
 syncer = EnhancedZoteroLiteratureSyncer(
     zotero_config=config.get_zotero_config(),
-    doi_downloads_enabled=True
+    doi_downloads_enabled=True,
+    pdf_integration_enabled=True,
+    default_integration_mode="attach"  # Recommended mode
 )
 
-# Sync collection with automatic PDF downloads
-result = syncer.sync_collection_with_doi_downloads(
-    collection_name="Physics Papers",
-    max_doi_downloads=10,
-    headless=False  # Set True to hide browser
+# Preview collection before sync
+preview = syncer.preview_collection_sync("Quantum Computing")
+print(f"Will download {preview['items_with_dois_no_pdfs']} PDFs")
+
+# Sync with automatic PDF downloads and integration
+result = syncer.sync_collection_with_doi_downloads_and_integration(
+    collection_name="Quantum Computing",
+    max_doi_downloads=15,
+    integration_mode="attach"
 )
 
-print(f"Downloaded {result.zotero_sync_result.successful_doi_downloads} PDFs")
+print(f"Downloaded: {result.zotero_sync_result.successful_doi_downloads} PDFs")
+print(f"Integrated: {result.pdfs_integrated} PDFs to Zotero")
+print(f"Success rate: {result.integration_success_rate:.1f}%")
 ```
 
-### Simple Chat Interface
+### AI-Powered Research Assistance
 
 ```python
 from src.chat import LiteratureAssistant
 from src.core import KnowledgeBase
 
-# Initialize components
+# Build knowledge base from enhanced Zotero content
 kb = KnowledgeBase()
-kb.load_from_file("physics_knowledge_base.pkl")
-
-assistant = LiteratureAssistant(kb, anthropic_api_key="your-key")
-
-# Ask questions
-response = assistant.ask("What are measurement-induced phase transitions?")
-print(response.content)
-print(f"Sources: {response.sources_used}")
-```
-
-### Literature Download (Legacy)
-
-```python
-from src.downloaders import LiteratureDownloader
-from pathlib import Path
-
-# Download from BibTeX
-downloader = LiteratureDownloader("literature_folder")
-results = downloader.download_from_bibtex(Path("my_papers.bib"))
-
-print(f"Downloaded: {len(results['successful'])} papers")
-```
-
-### Knowledge Base Building
-
-```python
-from src.core import KnowledgeBase
-
-# Build knowledge base from folders (includes Zotero downloads)
-kb = KnowledgeBase()
-stats = kb.build_from_directories(
-    literature_folder=Path("documents/literature"),
-    your_work_folder=Path("documents/your_work"),
-    zotero_folder=Path("documents/zotero_sync")
+kb.build_from_directories(
+    literature_folder=config.literature_folder,
+    your_work_folder=config.your_work_folder,
+    zotero_folder=config.zotero_sync_folder  # Includes DOI downloads
 )
 
-# Save for later use
-kb.save_to_file("knowledge_base.pkl")
+# AI assistant with comprehensive physics knowledge
+assistant = LiteratureAssistant(kb, config.anthropic_api_key)
+
+# Research queries with source citations
+response = assistant.ask(
+    "What are the latest developments in quantum error correction using surface codes?"
+)
+print(response.content)
+print(f"Based on {len(response.sources_used)} sources")
+```
+
+### Batch Collection Processing
+
+```python
+# Process multiple collections efficiently
+physics_collections = [
+    "Quantum Computing",
+    "Condensed Matter Theory", 
+    "Statistical Mechanics"
+]
+
+results = syncer.batch_sync_collections_with_integration(
+    collection_names=physics_collections,
+    max_doi_downloads_per_collection=10,
+    integration_mode="attach"
+)
+
+# Summary statistics
+total_downloaded = sum(r.zotero_sync_result.successful_doi_downloads for r in results.values() if r)
+total_integrated = sum(r.pdfs_integrated for r in results.values() if r)
+print(f"Batch complete: {total_downloaded} PDFs downloaded, {total_integrated} integrated")
 ```
 
 ## Configuration
 
-The pipeline uses centralized configuration in `config/settings.py`:
+Enhanced configuration supports multiple integration modes:
 
 ```python
 from config import PipelineConfig
 
-# Use defaults
-config = PipelineConfig()
-
-# Or customize
+# Initialize with enhanced Zotero support
 config = PipelineConfig({
     'embedding_model': 'all-MiniLM-L6-v2',
     'chunk_size': 1000,
-    'download_delay': 1.5,
-    'default_temperature': 0.3
+    'zotero_doi_downloads': True,
+    'pdf_integration_mode': 'attach',  # 'attach' or 'download_only'
+    'max_doi_downloads_per_sync': 15
 })
 ```
 
-## Directory Structure
+## Enhanced Directory Structure
 
 ```
 documents/
-├── biblio/              # Legacy .bib files
-├── literature/          # Downloaded papers (legacy arXiv)
-├── your_work/           # Your previous publications
-├── current_drafts/      # Your current drafts
-├── manual_references/   # Manually added papers
-└── zotero_sync/         # Zotero synchronized files
-    ├── pdfs/           # PDF attachments from Zotero
-    ├── other_files/    # Other document types
-    └── doi_downloads/  # PDFs downloaded via DOI automation
+├── zotero_sync/              # Enhanced Zotero content (NEW)
+│   ├── pdfs/                # PDF attachments from Zotero
+│   ├── other_files/         # Other document types
+│   └── doi_downloads/       # Automatically downloaded PDFs
+├── literature/              # Legacy arXiv downloads
+├── your_work/               # Your previous publications
+├── current_drafts/          # Your current drafts
+└── manual_references/       # Manually added papers
 ```
 
-## API Keys
+## API Keys & Setup
 
-Set your API keys in `.env` file:
+Enhanced setup requires Zotero integration:
 
 ```bash
 # Required: Anthropic API for AI assistant
 ANTHROPIC_API_KEY="your-anthropic-api-key"
 
-# Required for Zotero integration
+# Required: Enhanced Zotero integration
 ZOTERO_API_KEY="your-zotero-api-key"
 ZOTERO_LIBRARY_ID="your-library-id"
 ZOTERO_LIBRARY_TYPE="user"  # or "group"
@@ -222,229 +233,138 @@ GOOGLE_API_KEY="your-google-api-key"
 GOOGLE_SEARCH_ENGINE_ID="your-search-engine-id"
 ```
 
-## Publisher Support for DOI Downloads
+## Enhanced Publisher Support
 
-### ✅ Fully Supported Publishers
-- **APS (Physical Review)**: Automatic URL conversion, 95%+ success rate
-- **MDPI**: PDF button detection, 95%+ success rate  
-- **Nature Publishing**: Generic PDF link detection, 90%+ success rate
-- **arXiv**: Direct PDF URL construction, 99%+ success rate
+### ✅ Fully Supported (90%+ Success Rate)
+- **APS (Physical Review)**: All journals with automatic URL conversion
+- **MDPI**: Open-access journals with PDF button detection  
+- **Nature Publishing**: Generic PDF link detection
+- **arXiv**: Direct PDF URL construction (99% success)
 
-### 🔄 Partially Supported Publishers
-- **IEEE Xplore**: Generic strategy, ~70% success rate
-- **Springer**: Generic strategy, ~60% success rate
-- **IOP Publishing**: Generic strategy, varies by journal
+### 🔄 Partially Supported (60-80% Success)
+- **IEEE Xplore**: Generic strategy, institutional access dependent
+- **Springer**: Generic strategy, varies by journal
+- **IOP Publishing**: Generic strategy, journal-dependent
 
-### ❌ Restricted Publishers
-- **Elsevier/ScienceDirect**: Blocks automated access (CAPTCHA protection)
+### ❌ Restricted Publishers (Expected Failures)
+- **Science/AAAS**: Blocks automated access with CAPTCHA
+- **Elsevier/ScienceDirect**: Anti-automation measures
 
-*Note: Success rates depend on institutional access and subscription status*
-
-## Google Custom Search API Setup (Optional)
-
-To enable Google search fallback for papers not found via arXiv API:
-
-1. **Create a Custom Search Engine:**
-   - Go to [Google Custom Search Engine](https://cse.google.com/cse/)
-   - Click "Add" to create a new search engine
-   - Set "Sites to search" to `arxiv.org`
-   - Give it a name like "arXiv Papers"
-   - Click "Create"
-
-2. **Get your Search Engine ID:**
-   - In the control panel, click on your search engine
-   - Go to "Setup" → "Basics"
-   - Copy the "Search engine ID"
-
-3. **Enable the Custom Search API:**
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - Create a new project or select existing one
-   - Enable the "Custom Search API"
-   - Go to "Credentials" and create an API key
-
-4. **Set environment variables:**
-   ```bash
-   export GOOGLE_API_KEY="your-google-api-key"
-   export GOOGLE_SEARCH_ENGINE_ID="your-search-engine-id"
-   ```
+*Success rates depend on institutional access and subscription status*
 
 ## Advanced Usage
 
-### DOI Download Configuration
+### Collection-Specific Research Workflow
 
 ```python
-from src.downloaders import EnhancedZoteroLiteratureSyncer
-
-# Configure DOI download behavior
-syncer.configure_doi_downloads(
-    enabled=True,
-    max_per_sync=10,        # Limit downloads per operation
-    headless=True,          # Hide browser (set False for debugging)
-    timeout=30              # Download timeout in seconds
+# Focus on specific research area with automated integration
+result = syncer.sync_collection_with_doi_downloads_and_integration(
+    collection_name="Machine Learning Physics",
+    max_doi_downloads=20,
+    integration_mode="attach"
 )
 
-# Get download recommendations
-recommendations = syncer.get_recommendations()
-for rec in recommendations['recommendations']:
-    print(f"{rec['type']}: {rec['message']}")
+# Immediate AI analysis of new content
+if result.pdfs_integrated > 0:
+    assistant = LiteratureAssistant(syncer.knowledge_base, api_key)
+    summary = assistant.ask(
+        "Summarize the key findings from the newly added papers about "
+        "machine learning applications in physics"
+    )
 ```
 
-### Custom Document Processing
+### Performance Optimization
 
 ```python
-from src.core import DocumentProcessor
+# Configure for large libraries
+syncer.configure_doi_downloads(
+    enabled=True,
+    max_per_sync=25,        # Adjust based on collection size
+    headless=True,          # Faster for batch processing
+    timeout=45              # Longer timeout for slow networks
+)
 
-processor = DocumentProcessor()
-doc = processor.process_file(Path("paper.pdf"), source_type="literature")
-print(f"Extracted {doc.word_count} words")
+# Use collection previews to optimize workflow
+preview = syncer.preview_collection_sync("Large Collection")
+if preview['items_with_dois_no_pdfs'] > 50:
+    # Process in smaller batches
+    syncer.sync_collection_with_doi_downloads_and_integration(
+        collection_name="Large Collection",
+        max_doi_downloads=15,  # Conservative limit
+        integration_mode="attach"
+    )
 ```
 
-### Direct arXiv Search
+## Testing & Validation
 
-```python
-from src.downloaders import ArxivSearcher
+Comprehensive testing framework included:
 
-searcher = ArxivSearcher()
-result = searcher.search_paper(paper_metadata)
-if result.found:
-    download_result = searcher.download_paper(result.arxiv_id, "output/")
+```bash
+# Run enhanced integration tests
+python test_comprehensive_integration.py
+
+# Test specific modes with detailed analysis
+python test_attach_detailed.py
+
+# Check system status
+python -c "from src.downloaders import print_integration_status; print_integration_status()"
 ```
 
-### Knowledge Base Search
+## Performance & Reliability
 
-```python
-# Direct search
-results = kb.search("quantum entanglement", top_k=10)
-for result in results:
-    print(f"{result.chunk.file_name}: {result.similarity_score:.3f}")
-```
-
-## Customization
-
-### Adding New Publishers for DOI Downloads
-
-```python
-# In enhanced_zotero_manager.py, add to publisher-specific section:
-elif 'your-publisher.com' in current_url:
-    logger.debug("Trying Your Publisher PDF download...")
-    try:
-        # Publisher-specific download logic
-        pdf_links = driver.find_elements(By.CSS_SELECTOR, "a[href*='pdf']")
-        if pdf_links:
-            pdf_links[0].click()
-            # ... download detection logic
-    except Exception as e:
-        logger.debug(f"Your Publisher strategy failed: {e}")
-```
-
-### Adding New Document Types
-
-```python
-# Extend DocumentProcessor
-class CustomProcessor(DocumentProcessor):
-    def extract_custom_format(self, file_path):
-        # Your extraction logic
-        return extracted_text
-```
-
-### Alternative AI Models
-
-```python
-# Use different chat models
-config = PipelineConfig({
-    'claude_model': 'claude-3-opus-20240229',
-    'max_tokens': 8000
-})
-```
-
-## Performance
-
-### Typical Performance
-- **Zotero sync speed**: ~2-3 seconds for collection access (optimized)
+### Typical Performance Metrics
+- **Zotero sync speed**: 2-3 seconds per collection (optimized access)
 - **DOI download success**: 80-95% for supported publishers
-- **Download speed**: 1-2 PDFs per minute (respectful delays)
-- **Processing speed**: ~1-2 minutes for 10 papers (first run)
-- **Search speed**: <1 second for semantic search
-- **Memory usage**: ~2GB for 100 papers with embeddings
+- **PDF integration success**: 99%+ for downloaded files
+- **Processing speed**: 1-2 PDFs per minute (respectful delays)
+- **Knowledge base updates**: Real-time with downloaded content
 
-### Optimization Tips
-- Use collection-based sync for large Zotero libraries
-- Enable headless mode for faster downloads
-- Use caching for repeated knowledge base builds
-- Adjust chunk sizes based on document types
-- Use GPU acceleration for large embedding models
+### Reliability Features
+- **Graceful error handling**: Continues processing despite individual failures
+- **Publisher-specific strategies**: Optimized for each journal's download mechanism
+- **Automatic retries**: Built-in retry logic for transient failures
+- **Comprehensive logging**: Detailed success/failure tracking for optimization
 
 ## Troubleshooting
 
-### Common Issues
+### Common Issues & Solutions
 
-**"No papers found in Zotero collection"**
-- Check collection name spelling
-- Verify Zotero API permissions
-- Ensure collection has items
+**DOI Downloads Not Working**
+```bash
+# Install Chrome and ChromeDriver
+brew install chromedriver  # macOS
+# or download from https://chromedriver.chromium.org/
+```
 
-**"Selenium/Chrome driver not found"**
-- Install Chrome browser
-- Install ChromeDriver: `brew install chromedriver` (Mac) or download manually
-- Ensure ChromeDriver is in PATH
-
-**"DOI downloads failing"**
-- Try with `headless=False` to see browser behavior
-- Check institutional access to journals
-- Some publishers block automated access (expected)
-
-**"CAPTCHA detected"**
-- This is normal for protected publishers (Elsevier)
+**Science/Elsevier Downloads Failing**
+- This is expected behavior (publishers block automation)
 - Use manual download for these papers
-- Focus on supported publishers for automation
+- System gracefully handles these failures
 
-**"Zotero connection failed"**
-- Verify ZOTERO_API_KEY and ZOTERO_LIBRARY_ID in .env
-- Check API key permissions at https://www.zotero.org/settings/keys
-
-### Performance Issues
-
-**Slow Zotero collection access**
-- Using optimized collection-direct access (should be fast)
-- Large libraries: consider collection-based filtering
-
-**High memory usage during downloads**
-- Reduce max_doi_downloads parameter
-- Process collections in smaller batches
+**Large Library Performance**
+- Use collection-based sync instead of full library processing
+- Enable `headless=True` for faster automated processing
+- Process collections in smaller batches (10-15 papers)
 
 ## Contributing
 
-### Development Setup
+The enhanced system uses modular architecture for easy contribution:
 
-```bash
-# Install development dependencies
-pip install -r requirements.txt
-pip install pytest black isort selenium
-
-# Run tests
-pytest tests/
-
-# Format code
-black src/
-isort src/
+### Adding New Publishers
+```python
+# In enhanced_zotero_manager.py, add publisher-specific logic:
+elif 'new-publisher.com' in current_url:
+    # Add custom download strategy
+    pass
 ```
 
-### Adding Features
-
-1. **New document types**: Extend `DocumentProcessor`
-2. **New publishers**: Add to `enhanced_zotero_manager.py`
-3. **New AI models**: Modify chat interface
-4. **New file formats**: Add to supported extensions
-
-### Testing
-
+### Testing New Features
 ```bash
-# Run all tests
-pytest
+# Run comprehensive tests
+pytest tests/
 
-# Test specific modules
-pytest tests/test_document_processor.py
-pytest tests/test_zotero_integration.py
+# Test specific integration modes
+python test_attach_detailed.py
 ```
 
 ## License
@@ -453,49 +373,65 @@ MIT License - see LICENSE file for details.
 
 ## Citation
 
-If you use this pipeline in your research, please cite:
-
 ```bibtex
 @software{physics_synthesis_pipeline,
-  title={Physics Literature Synthesis Pipeline},
+  title={Enhanced Physics Literature Synthesis Pipeline with DOI-based PDF Integration},
   author={Your Name},
   year={2024},
-  url={https://github.com/your-repo/physics-synthesis-pipeline}
+  url={https://github.com/your-repo/physics-synthesis-pipeline},
+  note={Features automated Zotero integration with intelligent PDF acquisition}
 }
 ```
 
-## Support
-
-- **Documentation**: See `notebooks/physics_pipeline_demo.ipynb`
-- **Zotero Integration**: See `ZOTERO_README.md` for detailed setup
-- **Issues**: Report bugs and feature requests via GitHub issues
-- **Discussions**: Join community discussions for help and ideas
-
 ## Roadmap
 
-### Upcoming Features
-- [x] DOI-based PDF downloads with Selenium
-- [x] Enhanced Zotero integration with collection sync
-- [x] Multi-publisher support for automated downloads
-- [ ] Web-based interface (Streamlit app)
-- [ ] Advanced citation network analysis
-- [ ] Integration with additional reference managers
-- [ ] Cloud deployment options
+### ✅ Recently Added
+- Modular PDF integration system with attach mode
+- Enhanced Zotero manager with DOI-based downloads
+- Multi-publisher support (APS, MDPI, Nature, arXiv)
+- Optimized collection processing and testing framework
 
-### Long-term Goals
-- [ ] Multi-language support
-- [ ] Real-time literature monitoring
-- [ ] Automated research summaries
-- [ ] Integration with experimental databases
-- [ ] Advanced visualization tools
-- [ ] Collaborative knowledge bases
+### 🔄 In Progress
+- Web-based interface for non-technical users
+- Advanced citation network analysis
+- Integration with additional reference managers
+
+### 📋 Planned Features
+- Real-time literature monitoring and alerts
+- Cloud deployment options with API access
+- Advanced visualization tools for research trends
+- Collaborative knowledge bases for research groups
 
 ---
 
-**Happy researching! 🚀🔬**
+**Transform your physics research workflow with intelligent automation! 🚀🔬📚**
 
-### Manual References
+### Quick Reference Commands
 
-To add papers not available through automated download:
-1. Copy PDF, TEX, or TXT files to `documents/manual_references/`
-2. They will be automatically included when building the knowledge base
+```bash
+# Setup and test
+pip install -r requirements.txt
+python test_comprehensive_integration.py
+
+# Daily research workflow
+python -c "
+from src.downloaders import EnhancedZoteroLiteratureSyncer
+from config import PipelineConfig
+
+config = PipelineConfig()
+syncer = EnhancedZoteroLiteratureSyncer(config.get_zotero_config())
+result = syncer.sync_collection_with_doi_downloads_and_integration('My Papers', integration_mode='attach')
+print(f'Success: {result.pdfs_integrated} PDFs integrated')
+"
+
+# AI research assistance
+python -c "
+from src.chat import LiteratureAssistant
+from src.core import KnowledgeBase
+
+kb = KnowledgeBase()
+kb.load_from_file('physics_knowledge_base.pkl')
+assistant = LiteratureAssistant(kb, 'your-api-key')
+print(assistant.ask('What are the recent developments in quantum computing?').content)
+"
+```

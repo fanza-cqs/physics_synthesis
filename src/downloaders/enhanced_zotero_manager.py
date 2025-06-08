@@ -621,9 +621,10 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
         return sorted(files, key=lambda x: x['created'], reverse=True)
     
 
+    
     def get_collection_items_direct(self, collection_id: str) -> List[ZoteroItem]:
         """
-        Get items directly from a specific collection (FAST).
+        Get items directly from a specific collection (FAST VERSION - WITH PAGINATION FIX).
         
         Args:
             collection_id: Zotero collection ID
@@ -636,16 +637,19 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
         items = []
         
         try:
-            # Get items directly from the collection (much faster!)
-            raw_items = self.zot.collection_items(collection_id)
+            # CRITICAL FIX: Use everything() method to handle pagination
+            logger.info(f"Using everything() method to handle pagination...")
+            raw_items = self.zot.everything(self.zot.collection_items(collection_id))
             
-            logger.info(f"Retrieved {len(raw_items)} raw items directly from collection")
+            logger.info(f"Retrieved {len(raw_items)} raw items directly from collection (with pagination)")
             
             # Process each item
+            skipped_count = 0
             for raw_item in raw_items:
                 try:
                     # Skip non-regular items (like notes, attachments at top level)
                     if raw_item['data']['itemType'] in ['note', 'attachment']:
+                        skipped_count += 1
                         continue
                     
                     zotero_item = self._parse_zotero_item(raw_item)
@@ -655,7 +659,7 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
                     logger.warning(f"Error parsing collection item {raw_item.get('key', 'unknown')}: {e}")
                     continue
             
-            logger.info(f"Successfully parsed {len(items)} items from collection")
+            logger.info(f"Successfully parsed {len(items)} items from collection (skipped {skipped_count} non-items)")
             return items
             
         except Exception as e:
@@ -664,7 +668,7 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
 
     def get_collection_sync_summary_fast(self, collection_id: str) -> Dict[str, Any]:
         """
-        Get a summary of what would happen in a collection sync (FAST VERSION).
+        Get a summary of what would happen in a collection sync (FAST VERSION - FIXED).
         
         Args:
             collection_id: Zotero collection ID
@@ -673,7 +677,7 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
             Dict with sync preview information
         """
         try:
-            # Use direct collection access instead of filtering all items
+            # Use the FIXED direct collection access
             collection_items = self.get_collection_items_direct(collection_id)
             
             summary = {
@@ -713,7 +717,7 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
                                             max_doi_downloads: int = None,
                                             headless: bool = True) -> CollectionSyncResult:
         """
-        Sync a collection and download PDFs via DOI for items without attachments (FAST VERSION).
+        Sync a collection and download PDFs via DOI for items without attachments (FAST VERSION - FIXED).
         
         Args:
             collection_id: Zotero collection ID
@@ -740,7 +744,7 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
         )
         
         try:
-            # Get items directly from collection (FAST!)
+            # Get items directly from collection (FIXED!)
             collection_items = self.get_collection_items_direct(collection_id)
             result.total_items = len(collection_items)
             
@@ -818,6 +822,129 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
         
         # Log final summary
         logger.info(f"FAST collection sync complete:")
+        logger.info(f"  Total items: {result.total_items}")
+        logger.info(f"  Items with PDFs: {result.items_with_existing_pdfs}")
+        logger.info(f"  DOI downloads attempted: {result.doi_download_attempts}")
+        logger.info(f"  DOI downloads successful: {result.successful_doi_downloads}")
+        logger.info(f"  Processing time: {result.processing_time:.2f}s")
+        
+        return result
+    
+    def sync_collection_with_doi_downloads_enhanced(self, collection_id: str, max_doi_downloads: int = None, headless: bool = True) -> CollectionSyncResult:
+        """
+        Enhanced version that tracks Zotero item keys during download.
+        
+        Returns CollectionSyncResult with additional tracking info.
+        """
+        start_time = time.time()
+        
+        logger.info(f"Starting ENHANCED collection sync with DOI downloads: {collection_id}")
+        
+        result = CollectionSyncResult(
+            total_items=0,
+            items_with_existing_pdfs=0,
+            items_with_dois_no_pdfs=0,
+            doi_download_attempts=0,
+            successful_doi_downloads=0,
+            failed_doi_downloads=0,
+            processing_time=0.0,
+            downloaded_files=[],
+            errors=[]
+        )
+        
+        # NEW: Track download metadata for integration
+        result.download_metadata = []  # Add this field to CollectionSyncResult
+        
+        try:
+            # Get items directly from collection
+            collection_items = self.get_collection_items_direct(collection_id)
+            result.total_items = len(collection_items)
+            
+            logger.info(f"Found {result.total_items} items in collection")
+            
+            # Categorize items and track metadata
+            items_needing_doi_download = []
+            
+            for item in collection_items:
+                # Check if item has PDF attachments
+                attachments = self.get_item_attachments(item.key)
+                pdf_attachments = [att for att in attachments if att.content_type == 'application/pdf']
+                
+                if pdf_attachments:
+                    result.items_with_existing_pdfs += 1
+                elif item.doi and item.doi.strip():
+                    items_needing_doi_download.append(item)
+                    result.items_with_dois_no_pdfs += 1
+            
+            logger.info(f"Items with existing PDFs: {result.items_with_existing_pdfs}")
+            logger.info(f"Items needing DOI download: {result.items_with_dois_no_pdfs}")
+            
+            # Perform DOI downloads if enabled
+            if self.doi_downloads_enabled and items_needing_doi_download:
+                # Limit for testing
+                if max_doi_downloads:
+                    items_needing_doi_download = items_needing_doi_download[:max_doi_downloads]
+                
+                result.doi_download_attempts = len(items_needing_doi_download)
+                
+                logger.info(f"Starting DOI downloads for {result.doi_download_attempts} items")
+                
+                # Set up browser
+                self.browser_headless = headless
+                driver = self.setup_selenium_driver()
+                
+                if driver:
+                    try:
+                        for i, item in enumerate(items_needing_doi_download, 1):
+                            logger.info(f"DOI download {i}/{result.doi_download_attempts}: {item.title[:50]}...")
+                            
+                            download_result = self.download_pdf_from_doi(driver, item)
+                            
+                            if download_result.success:
+                                result.successful_doi_downloads += 1
+                                result.downloaded_files.append(download_result.file_path)
+                                
+                                # NEW: Track metadata for integration
+                                result.download_metadata.append({
+                                    'file_path': download_result.file_path,
+                                    'zotero_key': item.key,  # REAL Zotero key!
+                                    'doi': item.doi,
+                                    'title': item.title,
+                                    'authors': item.authors,
+                                    'year': item.year
+                                })
+                                
+                                logger.info(f"✅ Downloaded: {Path(download_result.file_path).name}")
+                            else:
+                                result.failed_doi_downloads += 1
+                                result.errors.append(f"{item.title}: {download_result.error}")
+                                logger.warning(f"❌ Failed: {download_result.error}")
+                            
+                            # Small delay between downloads
+                            time.sleep(2)
+                    
+                    finally:
+                        driver.quit()
+                        logger.info("Browser closed")
+                
+                else:
+                    result.errors.append("Failed to initialize browser for DOI downloads")
+            
+            else:
+                if not self.doi_downloads_enabled:
+                    logger.info("DOI downloads disabled - skipping")
+                else:
+                    logger.info("No items need DOI downloads")
+        
+        except Exception as e:
+            error_msg = f"Error during collection sync: {e}"
+            result.errors.append(error_msg)
+            logger.error(error_msg)
+        
+        result.processing_time = time.time() - start_time
+        
+        # Log final summary
+        logger.info(f"ENHANCED collection sync complete:")
         logger.info(f"  Total items: {result.total_items}")
         logger.info(f"  Items with PDFs: {result.items_with_existing_pdfs}")
         logger.info(f"  DOI downloads attempted: {result.doi_download_attempts}")
