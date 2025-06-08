@@ -48,7 +48,7 @@ class EnhancedZoteroLiteratureSyncer:
                  auto_build_kb: bool = True,
                  doi_downloads_enabled: bool = True,
                  pdf_integration_enabled: bool = True,
-                 default_integration_mode: str = "attach"):
+                 default_integration_mode: str = "download_only"):
         """
         Initialize enhanced literature syncer with PDF integration.
         

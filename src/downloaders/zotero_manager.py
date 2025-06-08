@@ -2,8 +2,44 @@
 """
 Zotero Library Manager for the Physics Literature Synthesis Pipeline.
 
-Replaces BibTeX-based approach with direct Zotero Web API integration.
-Provides comprehensive metadata extraction and file synchronization.
+This is the BASE manager that provides core Zotero Web API functionality.
+For advanced features like DOI-based PDF downloads, see EnhancedZoteroLibraryManager.
+
+ARCHITECTURE DECISION:
+===================
+We maintain TWO separate managers for the following reasons:
+
+1. SINGLE RESPONSIBILITY:
+   - ZoteroLibraryManager: Pure Zotero API operations (650+ lines)
+   - EnhancedZoteroLibraryManager: Browser automation + DOI downloads (800+ lines)
+   
+2. DEPENDENCY SEPARATION:
+   - Basic: Only requires PyZotero (lightweight)
+   - Enhanced: Requires Selenium + ChromeDriver (heavyweight)
+   
+3. DEPLOYMENT FLEXIBILITY:
+   - Minimal environments can use basic manager only
+   - Full deployments get enhanced features when dependencies available
+   
+4. MAINTAINABILITY:
+   - Combined file would be 1400+ lines (too large)
+   - Easier to test and debug separate concerns
+   - Clear inheritance hierarchy: Enhanced inherits from Basic
+
+USAGE GUIDELINES:
+===============
+- Use ZoteroLibraryManager for: Basic library sync, metadata extraction, file downloads
+- Use EnhancedZoteroLibraryManager for: DOI-based PDF downloads, browser automation
+- Factory function in __init__.py automatically selects the appropriate manager
+
+INHERITANCE RELATIONSHIP:
+========================
+ZoteroLibraryManager (this file)
+    └── EnhancedZoteroLibraryManager (enhanced_zotero_manager.py)
+        ├── Inherits ALL basic functionality
+        ├── Adds DOI download capabilities  
+        ├── Adds browser automation features
+        └── Gracefully degrades when Selenium unavailable
 """
 
 import os
@@ -72,10 +108,21 @@ class SyncResult:
 
 class ZoteroLibraryManager:
     """
-    Manages integration with Zotero libraries via Web API.
+    Core Zotero Library Manager - Base Implementation
     
-    Provides comprehensive access to Zotero metadata and file attachments,
-    replacing the BibTeX-based literature management approach.
+    This class provides essential Zotero Web API functionality including:
+    ✅ Library synchronization via PyZotero
+    ✅ Item and attachment retrieval  
+    ✅ Collection management
+    ✅ BibTeX export
+    ✅ File downloads (existing attachments)
+    
+    For advanced features, see EnhancedZoteroLibraryManager:
+    🚀 DOI-based PDF downloads
+    🚀 Browser automation  
+    🚀 Publisher-specific download strategies
+    
+    Dependencies: PyZotero only (lightweight)
     """
     
     def __init__(self, 
@@ -84,13 +131,16 @@ class ZoteroLibraryManager:
                  api_key: str = None,
                  output_directory: Path = None):
         """
-        Initialize Zotero library manager.
+        Initialize core Zotero library manager.
         
         Args:
             library_id: Zotero library ID (user ID or group ID)
             library_type: "user" for personal library, "group" for group library
             api_key: Zotero API key (get from https://www.zotero.org/settings/keys)
             output_directory: Directory to save downloaded files
+            
+        Note:
+            For DOI-based PDF downloads, use EnhancedZoteroLibraryManager instead.
         """
         if not PYZOTERO_AVAILABLE:
             raise ImportError(
@@ -137,7 +187,8 @@ class ZoteroLibraryManager:
             'errors': []
         }
         
-        logger.info(f"Zotero manager initialized with output: {self.output_directory}")
+        logger.info(f"Basic Zotero manager initialized. For DOI downloads, use EnhancedZoteroLibraryManager.")
+        logger.info(f"Basic Zotero manager initialized with output: {self.output_directory}")
     
     def test_connection(self) -> Dict[str, Any]:
         """
