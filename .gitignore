@@ -23,6 +23,7 @@ notebooks/.ipynb_checkpoints/*.ipynb
 
 # Exlude embedded literature
 *.pkl
+knowledge_bases/
 
 # Python
 __pycache__/
