@@ -33,3 +33,7 @@ python-dotenv>=0.19.0
 # Utilities
 pathlib2>=2.3.0
 tqdm>=4.64.0
+
+# Streamlit for frontend
+streamlit
+plotly
