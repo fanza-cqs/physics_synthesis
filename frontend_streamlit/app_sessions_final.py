@@ -12,6 +12,42 @@ import time
 
 
 # ============================================================================
+# Path Setup - CRITICAL: This must come before any src imports
+# ============================================================================
+current_dir = Path(__file__).parent
+project_root = None
+
+# Search upward for the config directory
+for parent in [current_dir] + list(current_dir.parents):
+    if (parent / "config").exists() and (parent / "src").exists():
+        project_root = parent
+        break
+
+if project_root is None:
+    st.error("❌ Could not find project root. Make sure you're running from within the physics_synthesis_pipeline directory.")
+    st.stop()
+
+# CRITICAL: Add to Python path BEFORE importing src modules
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+print(f"✅ Project root: {project_root}")
+print(f"✅ Python path includes: {project_root}")
+
+
+
+# Zotero utils imports
+from src.utils.zotero_utils import (
+    initialize_zotero,
+    retry_zotero_connection,
+    test_zotero_connection_and_update_status,
+    reload_zotero_collections,
+    get_zotero_status_display,
+    is_zotero_working
+)
+
+
+# ============================================================================
 # PyTorch Compatibility Fix
 # ============================================================================
 try:
@@ -254,7 +290,9 @@ def init_app_session_state():
 # System Initialization
 # ============================================================================
 def initialize_system():
-    """Initialize all system components with proper error handling and ordering"""
+    """Initialize all system components with proper error handling, ordering and status constants"""
+    from src.utils.status_constants import ZoteroStatus, set_zotero_status
+    
     try:
         if st.session_state.system_initialized:
             return True
@@ -283,34 +321,19 @@ def initialize_system():
         # NOW initialize session integration (after session_manager is in state)
         with st.spinner("🔗 Setting up session integration..."):
             try:
-                #print(f"🔍 DEBUG: About to create session integration")
-                #print(f"🔍 DEBUG: session_manager = {session_manager}")
-                #print(f"🔍 DEBUG: st.session_state keys before: {list(st.session_state.keys())}")
+
         
                 # Don't use init_session_integration() - do it manually here
                 from src.sessions.session_integration import SessionIntegration
                 
                 # FIXED: Always create new integration (don't check if it exists)
-                #print(f"🔍 DEBUG: Creating new SessionIntegration")
-                st.session_state.session_integration = SessionIntegration(session_manager)
-                #print(f"🔍 DEBUG: Created session_integration: {st.session_state.session_integration}")
-        
-
-                #if 'session_integration' not in st.session_state:
-                #    print(f"🔍 DEBUG: Creating new SessionIntegration")
-                #    st.session_state.session_integration = SessionIntegration(session_manager)
-                #    print(f"🔍 DEBUG: Created session_integration: {st.session_state.session_integration}")
-        
+                st.session_state.session_integration = SessionIntegration(session_manager)     
                 
                 # Sync current session to Streamlit state
                 integration = st.session_state.session_integration
-                #print(f"🔍 DEBUG: Got integration from session_state: {integration}")
-
                 current_session = integration.ensure_current_session()
-                #print(f"🔍 DEBUG: ensure_current_session returned: {current_session}")
-
                 integration.sync_session_to_streamlit(current_session)
-                #print(f"🔍 DEBUG: Session integration setup complete")
+                
                 
             except Exception as e:
                 #print(f"🔍 DEBUG: Session integration failed with error: {e}")
@@ -320,16 +343,12 @@ def initialize_system():
                 # Continue without session integration for now
                 st.session_state.session_integration = None
         
-        # Initialize other components
+        # Initialize Zotero using shared utility
         if ZOTERO_AVAILABLE:
             with st.spinner("📚 Setting up Zotero integration..."):
-                try:
-                    zotero_manager = create_zotero_manager(config)
-                    st.session_state.zotero_manager = zotero_manager
-                    st.session_state.zotero_status = "✅ Connected"
-                except Exception as e:
-                    st.session_state.zotero_manager = None
-                    st.session_state.zotero_status = f"❌ Failed: {e}"
+                initialize_zotero(config)
+                
+
         
         # Test chat availability
         if CHAT_AVAILABLE:
@@ -367,15 +386,12 @@ def get_session_integration_safe():
 
 
 
+# Update the load_zotero_collections function to use shared utility
 def load_zotero_collections():
-    """Load Zotero collections"""
-    if st.session_state.zotero_manager:
-        try:
-            collections = st.session_state.zotero_manager.get_collections()
-            st.session_state.zotero_collections = collections
-        except Exception as e:
-            st.warning(f"⚠️ Could not load Zotero collections: {e}")
-            st.session_state.zotero_collections = []
+    """Load Zotero collections using shared utility"""
+    success, message = reload_zotero_collections()
+    if not success:
+        st.warning(f"⚠️ {message}")
 
 
 # ============================================================================
@@ -424,8 +440,9 @@ def render_knowledge_bases_page(session_manager):
     kb_management._render_kb_interface()  # Call the internal interface method directly
 
 
+# Replace the render_zotero_page function
 def render_zotero_page():
-    """Render the Zotero management page"""
+    """Render the Zotero management page using shared utilities"""
     st.markdown("# 🔗 Zotero Integration")
     
     # Back to chat button
@@ -435,10 +452,11 @@ def render_zotero_page():
     
     st.markdown("---")
     
-    # Use existing Zotero management logic but as full page
-    zotero_status = st.session_state.get('zotero_status', 'unknown')
+    # Use shared utility for clean status checking
+    status_text, display_class, is_working = get_zotero_status_display()
     
-    if zotero_status == 'connected':
+    if is_working:
+        # Zotero is working - show success
         st.success("✅ Connected to Zotero")
         
         # Show collections
@@ -446,7 +464,6 @@ def render_zotero_page():
         if collections:
             st.markdown(f"**Found {len(collections)} collections:**")
             
-            # Display collections in a nice format
             for collection in collections[:15]:  # Show first 15
                 col1, col2 = st.columns([3, 1])
                 with col1:
@@ -460,14 +477,26 @@ def render_zotero_page():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 Reload Collections", use_container_width=True):
-                load_zotero_collections()
-                st.rerun()
+                with st.spinner("Reloading collections..."):
+                    success, message = reload_zotero_collections()
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
         
         with col2:
             if st.button("🧪 Test Connection", use_container_width=True):
-                test_zotero_connection()
+                with st.spinner("Testing connection..."):
+                    result = test_zotero_connection_and_update_status()
+                    
+                    if result['success']:
+                        collections_info = f", {result['collections_count']} collections" if 'collections_count' in result else ""
+                        st.success(f"✅ Connection successful! Found {result.get('total_items', 0)} items{collections_info}")
+                    else:
+                        st.error(f"❌ Connection failed: {result['error']}")
     
-    elif zotero_status == 'not_configured':
+    elif display_class == "warning":  # Not configured
         st.warning("⚙️ Zotero not configured")
         st.markdown("**To configure Zotero, add to your `.env` file:**")
         st.code("""
@@ -478,14 +507,26 @@ ZOTERO_LIBRARY_TYPE=user
         """)
         
         if st.button("🔄 Retry After Configuration"):
-            initialize_system()
-            st.rerun()
-    else:
-        st.error(f"❌ Zotero error: {zotero_status}")
+            with st.spinner("Checking configuration..."):
+                if retry_zotero_connection():
+                    st.success("✅ Connection established!")
+                    st.rerun()
+                else:
+                    st.error("❌ Configuration still not working - check your `.env` file")
+    
+    else:  # Error states
+        st.error("❌ Zotero connection failed")
+        st.error(f"Status: {status_text}")
         
+        # Provide retry button
         if st.button("🔄 Retry Connection"):
-            initialize_system()
-            st.rerun()
+            with st.spinner("Retrying connection..."):
+                if retry_zotero_connection():
+                    st.success("✅ Connection restored!")
+                    st.rerun()
+                else:
+                    st.error("❌ Retry failed - check your Zotero configuration")
+
 
 
 def render_settings_page():
@@ -569,24 +610,17 @@ def test_anthropic_connection():
         except Exception as e:
             st.error(f"❌ Anthropic API test failed: {e}")
 
+# Update test_zotero_connection function 
 def test_zotero_connection():
-    """Test Zotero API connection"""
-    if not st.session_state.zotero_manager:
-        st.error("❌ Zotero manager not initialized")
-        return
-    
+    """Test Zotero API connection using shared utility"""
     with st.spinner("Testing Zotero connection..."):
-        try:
-            connection_info = st.session_state.zotero_manager.test_connection()
-            
-            if connection_info.get('connected'):
-                st.success("✅ Zotero connection successful!")
-                st.info(f"📚 Found {connection_info.get('total_items', 0)} items in library")
-            else:
-                st.error(f"❌ Zotero connection failed: {connection_info.get('error')}")
-                
-        except Exception as e:
-            st.error(f"❌ Zotero test failed: {e}")
+        result = test_zotero_connection_and_update_status()
+        
+        if result['success']:
+            collections_info = f", {result['collections_count']} collections" if 'collections_count' in result else ""
+            st.success(f"✅ Zotero connection successful! Found {result.get('total_items', 0)} items{collections_info}")
+        else:
+            st.error(f"❌ Zotero test failed: {result['error']}")
 
 # ============================================================================
 # Auto-save and Cleanup

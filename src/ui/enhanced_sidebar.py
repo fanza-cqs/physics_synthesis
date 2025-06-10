@@ -9,6 +9,12 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ..utils.zotero_utils import (
+    retry_zotero_connection,
+    get_zotero_status_display,
+    is_zotero_working
+)
+
 from ..sessions import SessionManager
 from ..sessions.session_integration import get_session_integration #get_session_integration_safe
 from ..utils.logging_config import get_logger
@@ -82,8 +88,9 @@ class EnhancedSidebar:
         # Enhanced status indicators
         self._render_enhanced_status_indicators()
     
+
     def _render_enhanced_status_indicators(self):
-        """Render enhanced status indicators with detailed info"""
+        """Render enhanced status indicators with shared utility functions"""
         st.markdown("##### Status")
         
         config = st.session_state.get('config')
@@ -100,21 +107,30 @@ class EnhancedSidebar:
         else:
             st.markdown("**Anthropic:** ❌")
             if st.button("🔧 Configure", key="config_anthropic", help="Configure Anthropic API"):
-                st.session_state.show_settings = True
+                st.session_state.current_page = 'settings'
                 st.rerun()
         
-        # Zotero status
-        zotero_status = st.session_state.get('zotero_status', 'unknown')
-        if zotero_status == 'connected':
-            collections_count = len(st.session_state.get('zotero_collections', []))
-            st.markdown(f"**Zotero:** ✅ ({collections_count})")
-        elif zotero_status == 'not_configured':
-            st.markdown("**Zotero:** ⚙️")
+        # Zotero status - CLEAN LOGIC using shared utilities
+        status_text, display_class, is_working = get_zotero_status_display()
+        
+        if is_working:
+            st.markdown(f"**Zotero:** {status_text}")
+            
+        elif display_class == "warning":  # Not configured
+            st.markdown(f"**Zotero:** {status_text}")
             if st.button("🔧 Setup", key="setup_zotero", help="Setup Zotero integration"):
-                st.session_state.show_settings = True
+                st.session_state.current_page = 'settings'
                 st.rerun()
-        else:
-            st.markdown("**Zotero:** ❌")
+                
+        else:  # Error or other states
+            st.markdown(f"**Zotero:** {status_text}")
+            if st.button("🔄 Retry", key="retry_zotero", help="Retry Zotero connection"):
+                with st.spinner("Retrying connection..."):
+                    if retry_zotero_connection():
+                        st.success("✅ Connection restored!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Retry failed")
         
         # Current session KB status
         current_session = self.session_manager.current_session
@@ -132,9 +148,14 @@ class EnhancedSidebar:
         if current_session:
             msg_count = len([m for m in current_session.messages if m.role == "user"])
             doc_count = len(current_session.documents)
-            if msg_count > 0 or doc_count > 0:
-                st.caption(f"💬 {msg_count} msgs • 📄 {doc_count} docs")
+            st.markdown(f"💬 {msg_count} msgs • 📄 {doc_count} docs")
+        else:
+            st.markdown("💬 0 msgs • 📄 0 docs")
     
+
+    
+
+
     def _render_divider(self):
         """Render enhanced divider"""
         st.markdown("""
@@ -234,7 +255,7 @@ class EnhancedSidebar:
             menu_options = ["Options", "✏️ Rename", "📥 Download", "🗑️ Delete"]
             
             selected_option = st.selectbox(
-                "",  # No label
+                "Session Actions",  # No label
                 menu_options,
                 key=f"menu_select_{session_id}",
                 index=0,  # Default to "Options"
@@ -540,6 +561,28 @@ class EnhancedSidebar:
         except Exception as e:
             logger.error(f"Failed to duplicate session {session_id}: {e}")
             st.error("❌ Duplication failed")
+
+
+def _retry_zotero_connection():
+        """Retry Zotero connection with proper status handling"""
+        from src.utils.status_constants import ZoteroStatus, set_zotero_status
+        
+        try:
+            config = st.session_state.get('config')
+            if config:
+                set_zotero_status(st.session_state, ZoteroStatus.CONNECTING)
+                
+                from src.downloaders import create_zotero_manager
+                zotero_manager = create_zotero_manager(config)
+                st.session_state.zotero_manager = zotero_manager
+                
+                set_zotero_status(st.session_state, ZoteroStatus.CONNECTED)
+                st.rerun()
+                
+        except Exception as e:
+            set_zotero_status(st.session_state, ZoteroStatus.FAILED, str(e))
+            st.rerun()
+
 
 
 def render_enhanced_sidebar_css():
