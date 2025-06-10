@@ -1,0 +1,15 @@
+{
+  "id": "7dccdfdd-0406-45bd-a7a9-48986f20e92a",
+  "name": "New Session",
+  "created_at": "2025-06-09T22:49:54.641417",
+  "last_active": "2025-06-09T23:34:26.124403",
+  "knowledge_base_name": null,
+  "documents": [],
+  "settings": {
+    "temperature": 0.3,
+    "max_sources": 8,
+    "response_style": "detailed"
+  },
+  "messages": [],
+  "auto_named": false
+}
