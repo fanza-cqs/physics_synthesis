@@ -38,8 +38,8 @@ class EnhancedChatInterface:
     
     def render(self):
         """Render the complete enhanced chat interface"""
-        print(f"🔍 DEBUG: EnhancedChatInterface.render() called")
-        print(f"🔍 DEBUG: self.integration = {self.integration}")
+        #G: EnhancedChatInterface.render() called")
+        #print(f"🔍 DEBUG: self.integration = {self.integration}")
 
         if self.integration is None:
             print("🔍 DEBUG: Integration is None in chat interface!")
@@ -238,7 +238,7 @@ class EnhancedChatInterface:
                         st.error("Failed to clear conversation")
             
             with col2:
-                if st.button("📤 Export", key=f"export_{session.id}"):
+                if st.button("📤 Export", key=f"chat_export_{session.id}"):
                     self._export_conversation(session)
     
     def _render_session_context(self, session):

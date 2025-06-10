@@ -65,18 +65,18 @@ class EnhancedSidebar:
         
         # Knowledge Bases button
         if st.button("📚 Knowledge Bases", key="sidebar_kb", use_container_width=True):
-            st.session_state.show_kb_management = True
+            st.session_state.current_page = 'knowledge_bases'
             st.rerun()
-        
+
         # Zotero Integration button (if available)
         if st.session_state.get('zotero_available', False):
             if st.button("🔗 Zotero Integration", key="sidebar_zotero", use_container_width=True):
-                st.session_state.show_zotero_management = True
+                st.session_state.current_page = 'zotero'
                 st.rerun()
-        
+
         # Settings button
         if st.button("⚙️ Settings", key="sidebar_settings", use_container_width=True):
-            st.session_state.show_settings = True
+            st.session_state.current_page = 'settings'
             st.rerun()
         
         # Enhanced status indicators
@@ -156,26 +156,21 @@ class EnhancedSidebar:
         # Sessions list with enhanced features
         self._render_enhanced_sessions_list()
     
-    def _render_enhanced_sessions_list(self):
-        """Render enhanced sessions list with better UI"""
-        print(f"🔍 DEBUG: _render_enhanced_sessions_list called")
-        print(f"🔍 DEBUG: self.integration = {self.integration}")
+    
 
+    def _render_enhanced_sessions_list(self):
+        """Render enhanced sessions list with clean UI and proper dividers"""
         # Get current session ID first
         current_session_id = None
         if self.session_manager.current_session:
             current_session_id = self.session_manager.current_session.id
 
         if self.integration is None:
-            print("🔍 DEBUG: Integration is None!")
             # Fallback: use session manager directly
             sessions = self.session_manager.list_sessions()
             st.info("Using basic session list (integration unavailable)")
         else:
             sessions = self.integration.get_session_list_for_ui()
-        print(f"🔍 DEBUG: Got {len(sessions)} sessions")
-            #current_session = self.session_manager.current_session
-            #current_session_id = current_session.id if current_session else None
         
         if not sessions:
             st.markdown("*No conversations yet*")
@@ -190,166 +185,168 @@ class EnhancedSidebar:
             if len(grouped_sessions) > 1 and date_group != "Today":
                 st.markdown(f"**{date_group}**")
             
+            # Filter and render sessions with proper dividers
+            valid_sessions = []
             for session_meta in group_sessions:
-                self._render_enhanced_session_item(session_meta, current_session_id)
+                # Skip any sessions that might be named "New Session" with empty content
+                # But print a debug statement
+                if session_meta['name'] == "New Session" and session_meta.get('message_count', 0) == 0:
+                    print("DEBUG: Empty <New Session> present!!")
+                    continue  # Skip empty default sessions
+                valid_sessions.append(session_meta)
+            
+            # Render valid sessions with dividers
+            for i, session_meta in enumerate(valid_sessions):
+                self._render_clean_session_item(session_meta, current_session_id, is_last=(i == len(valid_sessions) - 1))
+
     
-    def _render_enhanced_session_item(self, session_meta: Dict, current_session_id: Optional[str]):
-        """Render enhanced session item with better UX"""
+
+
+    def _render_clean_session_item(self, session_meta: Dict, current_session_id: Optional[str], is_last: bool = False):
+        """Render clean session item with title on top row, selectbox below, and divider"""
         session_id = session_meta['id']
         session_name = session_meta['name']
         is_current = session_id == current_session_id
         
-        # Create container for session item with enhanced styling
-        container = st.container()
-        
-        with container:
-            # Session button with enhanced styling
-            button_key = f"session_{session_id}"
-            button_label = self._format_session_label(session_meta)
-            
-            # Use different styling for current session
+        # Create a container for the session item
+        with st.container():
+            # Session title - full width on first row
             if is_current:
                 # Current session - highlighted
                 st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                           color: white; padding: 0.75rem; border-radius: 8px; margin: 0.25rem 0;
-                           border-left: 4px solid #4338ca;">
-                    <div style="font-weight: 600; font-size: 0.9rem;">{session_name}</div>
-                    <div style="font-size: 0.7rem; opacity: 0.9;">{session_meta['context_summary']}</div>
+                        color: white; padding: 0.6rem; border-radius: 6px; margin: 0.25rem 0;
+                        font-weight: 600; font-size: 0.85rem;">
+                    {session_name}
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                # Regular session - clickable
+                # Regular session - clickable button
                 if st.button(
-                    button_label,
-                    key=button_key,
-                    help=self._get_enhanced_session_tooltip(session_meta),
+                    session_name,
+                    key=f"session_{session_id}",
+                    help=f"Switch to: {session_name}",
                     use_container_width=True
                 ):
                     self._switch_to_session(session_id)
             
-            # Session options (three dots menu)
-            if st.button("⋮", key=f"menu_{session_id}", help="Session options"):
-                st.session_state[f'show_session_menu_{session_id}'] = True
+            # Selectbox for menu options - full width on second row
+            menu_options = ["Options", "✏️ Rename", "📥 Download", "🗑️ Delete"]
+            
+            selected_option = st.selectbox(
+                "",  # No label
+                menu_options,
+                key=f"menu_select_{session_id}",
+                index=0,  # Default to "Options"
+                label_visibility="collapsed"  # Hide the label
+            )
+            
+            # Handle the selected option
+            if selected_option == "✏️ Rename":
+                st.session_state[f'rename_session_{session_id}'] = True
+                # Reset selectbox to default
+                st.session_state[f"menu_select_{session_id}"] = "Options"
                 st.rerun()
-        
-        # Session options menu (if open)
-        if st.session_state.get(f'show_session_menu_{session_id}', False):
-            self._render_enhanced_session_menu(session_id, session_name, session_meta)
-    
-    def _render_enhanced_session_menu(self, session_id: str, session_name: str, session_meta: Dict):
-        """Render enhanced session options menu"""
-        with st.expander(f"⚙️ {session_name[:20]}...", expanded=True):
-            # Session info
-            st.markdown(f"**Created:** {session_meta['last_active_formatted']}")
-            st.markdown(f"**Messages:** {session_meta.get('message_count', 0)}")
-            st.markdown(f"**Documents:** {session_meta.get('document_count', 0)}")
-            
-            if session_meta.get('knowledge_base_name'):
-                st.markdown(f"**KB:** {session_meta['knowledge_base_name']}")
-            
-            st.markdown("---")
-            
-            # Actions
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("✏️ Rename", key=f"rename_{session_id}"):
-                    st.session_state[f'rename_session_{session_id}'] = True
-                    st.session_state[f'show_session_menu_{session_id}'] = False
-                    st.rerun()
-                
-                if st.button("📤 Export", key=f"export_{session_id}"):
-                    self._export_session(session_id)
-            
-            with col2:
-                if st.button("🗑️ Delete", key=f"delete_{session_id}"):
-                    st.session_state[f'confirm_delete_{session_id}'] = True
-                    st.session_state[f'show_session_menu_{session_id}'] = False
-                    st.rerun()
-                
-                if st.button("📋 Duplicate", key=f"duplicate_{session_id}"):
-                    self._duplicate_session(session_id)
-            
-            # Close menu button
-            if st.button("✖️ Close", key=f"close_menu_{session_id}"):
-                st.session_state[f'show_session_menu_{session_id}'] = False
+            elif selected_option == "📥 Download":
+                self._export_session(session_id)
+                # Reset selectbox to default
+                st.session_state[f"menu_select_{session_id}"] = "Options"
                 st.rerun()
+            elif selected_option == "🗑️ Delete":
+                st.session_state[f'confirm_delete_{session_id}'] = True
+                # Reset selectbox to default
+                st.session_state[f"menu_select_{session_id}"] = "Options"
+                st.rerun()
+            
+            # Add horizontal divider after each session (except the last one)
+            if not is_last:
+                st.markdown("""
+                <div style="border-bottom: 1px solid #e2e8f0; margin: 0.75rem 0 0.5rem 0;"></div>
+                """, unsafe_allow_html=True)
         
         # Handle rename dialog
         if st.session_state.get(f'rename_session_{session_id}', False):
-            self._render_enhanced_rename_dialog(session_id, session_name)
+            self._render_simple_rename_dialog(session_id, session_name)
         
         # Handle delete confirmation
         if st.session_state.get(f'confirm_delete_{session_id}', False):
-            self._render_enhanced_delete_confirmation(session_id, session_name, session_meta)
+            self._render_simple_delete_confirmation(session_id, session_name)
+
     
-    def _render_enhanced_rename_dialog(self, session_id: str, current_name: str):
-        """Render enhanced session rename dialog"""
-        st.markdown("**Rename Session**")
-        
-        new_name = st.text_input(
-            "New name:",
-            value=current_name,
-            key=f"new_name_{session_id}",
-            max_chars=100
-        )
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("✅ Save", key=f"save_rename_{session_id}"):
-                if new_name.strip() and new_name.strip() != current_name:
-                    if self.integration.handle_session_rename(session_id, new_name.strip()):
-                        st.success("✅ Renamed successfully!")
+
+    
+    def _render_simple_rename_dialog(self, session_id: str, current_name: str):
+        """Render simple rename dialog"""
+        with st.container():
+            st.markdown("**Rename Session**")
+            
+            new_name = st.text_input(
+                "New name:",
+                value=current_name,
+                key=f"new_name_{session_id}",
+                max_chars=100
+            )
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("✅ Save", key=f"save_rename_{session_id}", use_container_width=True):
+                    if new_name.strip() and new_name.strip() != current_name:
+                        if self.integration.handle_session_rename(session_id, new_name.strip()):
+                            st.success("✅ Renamed!")
+                            st.session_state[f'rename_session_{session_id}'] = False
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to rename")
+                    elif not new_name.strip():
+                        st.error("❌ Name cannot be empty")
+                    else:
+                        # No change
                         st.session_state[f'rename_session_{session_id}'] = False
                         st.rerun()
-                    else:
-                        st.error("❌ Failed to rename session")
-                elif not new_name.strip():
-                    st.error("❌ Name cannot be empty")
-                else:
-                    # No change
+            
+            with col2:
+                if st.button("❌ Cancel", key=f"cancel_rename_{session_id}", use_container_width=True):
                     st.session_state[f'rename_session_{session_id}'] = False
                     st.rerun()
-        
-        with col2:
-            if st.button("❌ Cancel", key=f"cancel_rename_{session_id}"):
-                st.session_state[f'rename_session_{session_id}'] = False
-                st.rerun()
+
     
-    def _render_enhanced_delete_confirmation(self, session_id: str, session_name: str, session_meta: Dict):
-        """Render enhanced session delete confirmation"""
-        st.markdown("**Delete Session**")
-        st.warning(f"Are you sure you want to delete **'{session_name}'**?")
-        
-        # Show what will be lost
-        items_to_delete = []
-        if session_meta.get('message_count', 0) > 0:
-            items_to_delete.append(f"{session_meta['message_count']} messages")
-        if session_meta.get('document_count', 0) > 0:
-            items_to_delete.append(f"{session_meta['document_count']} documents")
-        
-        if items_to_delete:
-            st.markdown(f"**This will delete:** {', '.join(items_to_delete)}")
-        
-        st.markdown("*This action cannot be undone.*")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("🗑️ Delete", key=f"confirm_delete_yes_{session_id}"):
-                if self.integration.handle_session_delete(session_id):
-                    st.success("✅ Session deleted!")
+    def _render_simple_delete_confirmation(self, session_id: str, session_name: str):
+        """Render simple delete confirmation"""
+        with st.container():
+            st.markdown("**Delete Session**")
+            st.warning(f"Delete **'{session_name}'**?")
+            st.markdown("*This action cannot be undone.*")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Red delete button
+                st.markdown("""
+                <style>
+                div[data-testid="stButton"]:has(button[key*="confirm_delete_yes_"]) button {
+                    background-color: #dc2626 !important;
+                    color: white !important;
+                    border: none !important;
+                }
+                div[data-testid="stButton"]:has(button[key*="confirm_delete_yes_"]) button:hover {
+                    background-color: #b91c1c !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                if st.button("🗑️ Delete", key=f"confirm_delete_yes_{session_id}", use_container_width=True):
+                    if self.integration.handle_session_delete(session_id):
+                        st.success("✅ Deleted!")
+                        st.session_state[f'confirm_delete_{session_id}'] = False
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to delete")
+            
+            with col2:
+                if st.button("❌ Cancel", key=f"cancel_delete_{session_id}", use_container_width=True):
                     st.session_state[f'confirm_delete_{session_id}'] = False
                     st.rerun()
-                else:
-                    st.error("❌ Failed to delete session")
-        
-        with col2:
-            if st.button("❌ Cancel", key=f"cancel_delete_{session_id}"):
-                st.session_state[f'confirm_delete_{session_id}'] = False
-                st.rerun()
     
     def _format_session_label(self, session_meta: Dict) -> str:
         """Format session label for button display"""
@@ -549,165 +546,44 @@ def render_enhanced_sidebar_css():
     """Render enhanced CSS for sidebar styling"""
     st.markdown("""
     <style>
-    /* Enhanced sidebar styling */
-    div[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
-        border-right: 1px solid #e2e8f0 !important;
-    }
+    /* ... existing CSS ... */
     
-    /* Enhanced navigation buttons */
-    div[data-testid="stSidebar"] .stButton > button {
-        width: 100% !important;
-        height: auto !important;
-        background: white !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 10px !important;
-        color: #374151 !important;
-        font-weight: 500 !important;
-        text-align: left !important;
-        padding: 0.75rem !important;
-        margin-bottom: 0.5rem !important;
-        transition: all 0.3s ease !important;
-        white-space: normal !important;
-        word-wrap: break-word !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
-    }
-    
-    /* Enhanced hover effects */
-    div[data-testid="stSidebar"] .stButton > button:hover {
-        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
-        border-color: #667eea !important;
-        transform: translateX(4px) translateY(-1px) !important;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15) !important;
-    }
-    
-    /* Management buttons special styling */
-    div[data-testid="stSidebar"] .stButton[data-baseweb="button"]:has(button[key*="sidebar_"]) button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        font-weight: 600 !important;
-        border: none !important;
-    }
-    
-    div[data-testid="stSidebar"] .stButton[data-baseweb="button"]:has(button[key*="sidebar_"]) button:hover {
-        background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%) !important;
-        transform: translateX(4px) translateY(-2px) !important;
-        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3) !important;
-    }
-    
-    /* New session button */
-    div[data-testid="stSidebar"] .stButton[data-baseweb="button"]:has(button[key="new_session"]) button {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-        color: white !important;
-        border: none !important;
-        font-size: 1.2rem !important;
-        padding: 0.5rem !important;
-        font-weight: 700 !important;
-    }
-    
-    div[data-testid="stSidebar"] .stButton[data-baseweb="button"]:has(button[key="new_session"]) button:hover {
-        background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
-        transform: translateX(2px) translateY(-2px) !important;
-        box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3) !important;
-    }
-    
-    /* Session options button */
-    div[data-testid="stSidebar"] .stButton[data-baseweb="button"]:has(button[key*="menu_"]) button {
-        background: transparent !important;
-        border: 1px solid #d1d5db !important;
-        color: #6b7280 !important;
-        padding: 0.25rem !important;
-        min-height: auto !important;
-        height: 2rem !important;
-        border-radius: 6px !important;
-    }
-    
-    div[data-testid="stSidebar"] .stButton[data-baseweb="button"]:has(button[key*="menu_"]) button:hover {
-        background: #f3f4f6 !important;
-        color: #374151 !important;
-        border-color: #9ca3af !important;
-    }
-    
-    /* Status indicators */
-    div[data-testid="stSidebar"] .stMarkdown h5 {
-        color: #6b7280 !important;
-        font-size: 0.875rem !important;
-        font-weight: 600 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.05em !important;
-        margin-bottom: 0.5rem !important;
-    }
-    
-    div[data-testid="stSidebar"] .stMarkdown p {
-        margin-bottom: 0.25rem !important;
-        font-size: 0.875rem !important;
-        line-height: 1.25 !important;
-    }
-    
-    /* Session date group headers */
-    div[data-testid="stSidebar"] .stMarkdown h4 {
-        color: #4b5563 !important;
-        font-size: 0.75rem !important;
-        font-weight: 600 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.1em !important;
-        margin: 1rem 0 0.5rem 0 !important;
-        padding-left: 0.5rem !important;
-        border-left: 2px solid #e2e8f0 !important;
-    }
-    
-    /* Enhanced expandability */
-    div[data-testid="stSidebar"] .stExpander {
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 8px !important;
-        background: white !important;
-        margin: 0.25rem 0 !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
-    }
-    
-    div[data-testid="stSidebar"] .stExpander > div > div > div[data-testid="stExpanderHeader"] {
+    /* Compact selectbox styling for session menus */
+    div[data-testid="stSidebar"] .stSelectbox > div > div {
         background: #f8fafc !important;
-        border-radius: 8px 8px 0 0 !important;
-        padding: 0.5rem !important;
-        font-size: 0.875rem !important;
-        font-weight: 500 !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 6px !important;
+        min-height: 1.8rem !important;
+        padding: 0.2rem 0.5rem !important;
+        font-size: 0.8rem !important;
     }
     
-    div[data-testid="stSidebar"] .stExpander > div > div > div[data-testid="stExpanderContent"] {
-        background: white !important;
-        border-radius: 0 0 8px 8px !important;
-        padding: 0.75rem !important;
+    div[data-testid="stSidebar"] .stSelectbox > div > div:hover {
+        background: #f1f5f9 !important;
+        border-color: #cbd5e0 !important;
     }
     
-    /* Enhanced scrollbar for sidebar */
-    div[data-testid="stSidebar"]::-webkit-scrollbar {
-        width: 8px;
+    /* Style the selectbox text - smaller and centered */
+    div[data-testid="stSidebar"] .stSelectbox > div > div > div {
+        color: #6b7280 !important;
+        font-size: 0.8rem !important;
+        text-align: center !important;
+        line-height: 1.2 !important;
     }
     
-    div[data-testid="stSidebar"]::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 4px;
+    /* Make selectbox dropdown options smaller too */
+    div[data-testid="stSidebar"] .stSelectbox > div > div > div > div {
+        font-size: 0.8rem !important;
+        padding: 0.3rem 0.5rem !important;
     }
     
-    div[data-testid="stSidebar"]::-webkit-scrollbar-thumb {
-        background: linear-gradient(180deg, #cbd5e0 0%, #a0aec0 100%);
-        border-radius: 4px;
+    /* Adjust session button styling to be more compact */
+    div[data-testid="stSidebar"] .stButton[data-baseweb="button"]:has(button[key*="session_"]) button {
+        padding: 0.6rem !important;
+        font-size: 0.85rem !important;
+        margin-bottom: 0.25rem !important;
     }
     
-    div[data-testid="stSidebar"]::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(180deg, #a0aec0 0%, #718096 100%);
-    }
-    
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        div[data-testid="stSidebar"] .stButton > button {
-            padding: 0.5rem !important;
-            font-size: 0.875rem !important;
-        }
-        
-        div[data-testid="stSidebar"] .stMarkdown p {
-            font-size: 0.8rem !important;
-        }
-    }
+    /* ... rest of existing CSS ... */
     </style>
     """, unsafe_allow_html=True)

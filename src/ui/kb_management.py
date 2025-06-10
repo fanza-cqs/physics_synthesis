@@ -31,19 +31,19 @@ class KBManagement:
         """
         self.session_manager = session_manager
     
-    def render_overlay(self):
-        """Render KB management as overlay dialog"""
-        st.markdown("## 📚 Knowledge Base Management")
-        
-        # Close button
-        if st.button("✖️ Close", key="close_kb_management"):
-            st.session_state.show_kb_management = False
-            st.rerun()
-        
-        st.markdown("---")
-        
-        # Main KB management interface
-        self._render_kb_interface()
+    #def render_overlay(self):
+    #    """Render KB management as overlay dialog"""
+    #    st.markdown("## 📚 Knowledge Base Management")
+    #    
+    #    # Close button
+    #    if st.button("✖️ Close", key="close_kb_management"):
+    #        st.session_state.show_kb_management = False
+    #        st.rerun()
+    #    
+    #    st.markdown("---")
+    #    
+    #    # Main KB management interface
+    #    self._render_kb_interface()
     
     def _render_kb_interface(self):
         """Render main KB management interface"""

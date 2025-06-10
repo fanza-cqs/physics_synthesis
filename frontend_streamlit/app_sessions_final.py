@@ -127,50 +127,6 @@ def render_global_css():
         border-radius: 0;
     }
     
-    /* Management overlay styling */
-    .management-overlay {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 2rem;
-        box-shadow: 0 25px 50px rgba(0,0,0,0.25);
-        max-width: 90vw;
-        max-height: 90vh;
-        overflow-y: auto;
-        z-index: 1000;
-        animation: slideIn 0.3s ease-out;
-    }
-    
-    @keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: translate(-50%, -60%);
-        }
-        to {
-            opacity: 1;
-            transform: translate(-50%, -50%);
-        }
-    }
-    
-    .overlay-backdrop {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: rgba(0,0,0,0.6);
-        z-index: 999;
-        animation: fadeIn 0.3s ease-out;
-    }
-    
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
     
     /* Enhanced typography */
     .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
@@ -273,10 +229,8 @@ def init_app_session_state():
         'zotero_available': ZOTERO_AVAILABLE,
         'chat_available': CHAT_AVAILABLE,
         
-        # UI state
-        'show_kb_management': False,
-        'show_zotero_management': False,
-        'show_settings': False,
+        # SIMPLE PAGE NAVIGATION - Replace overlay state
+        'current_page': 'chat',  # 'chat', 'knowledge_bases', 'zotero', 'settings'
         
         # Session state
         'current_session_id': None,
@@ -329,17 +283,17 @@ def initialize_system():
         # NOW initialize session integration (after session_manager is in state)
         with st.spinner("🔗 Setting up session integration..."):
             try:
-                print(f"🔍 DEBUG: About to create session integration")
-                print(f"🔍 DEBUG: session_manager = {session_manager}")
-                print(f"🔍 DEBUG: st.session_state keys before: {list(st.session_state.keys())}")
+                #print(f"🔍 DEBUG: About to create session integration")
+                #print(f"🔍 DEBUG: session_manager = {session_manager}")
+                #print(f"🔍 DEBUG: st.session_state keys before: {list(st.session_state.keys())}")
         
                 # Don't use init_session_integration() - do it manually here
                 from src.sessions.session_integration import SessionIntegration
                 
                 # FIXED: Always create new integration (don't check if it exists)
-                print(f"🔍 DEBUG: Creating new SessionIntegration")
+                #print(f"🔍 DEBUG: Creating new SessionIntegration")
                 st.session_state.session_integration = SessionIntegration(session_manager)
-                print(f"🔍 DEBUG: Created session_integration: {st.session_state.session_integration}")
+                #print(f"🔍 DEBUG: Created session_integration: {st.session_state.session_integration}")
         
 
                 #if 'session_integration' not in st.session_state:
@@ -350,16 +304,16 @@ def initialize_system():
                 
                 # Sync current session to Streamlit state
                 integration = st.session_state.session_integration
-                print(f"🔍 DEBUG: Got integration from session_state: {integration}")
+                #print(f"🔍 DEBUG: Got integration from session_state: {integration}")
 
                 current_session = integration.ensure_current_session()
-                print(f"🔍 DEBUG: ensure_current_session returned: {current_session}")
+                #print(f"🔍 DEBUG: ensure_current_session returned: {current_session}")
 
                 integration.sync_session_to_streamlit(current_session)
-                print(f"🔍 DEBUG: Session integration setup complete")
+                #print(f"🔍 DEBUG: Session integration setup complete")
                 
             except Exception as e:
-                print(f"🔍 DEBUG: Session integration failed with error: {e}")
+                #print(f"🔍 DEBUG: Session integration failed with error: {e}")
                 import traceback
                 traceback.print_exc()
                 st.error(f"❌ Session integration failed: {e}")
@@ -423,53 +377,65 @@ def load_zotero_collections():
             st.warning(f"⚠️ Could not load Zotero collections: {e}")
             st.session_state.zotero_collections = []
 
-# ============================================================================
-# Management Overlays
-# ============================================================================
-def render_management_overlays():
-    """Render management overlays when requested"""
-    session_manager = st.session_state.session_manager
-    
-    # Knowledge Base Management
-    if st.session_state.get('show_kb_management', False):
-        render_overlay_backdrop()
-        with st.container():
-            st.markdown('<div class="management-overlay">', unsafe_allow_html=True)
-            kb_management = KBManagement(session_manager)
-            kb_management.render_overlay()
-            st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Zotero Management
-    if st.session_state.get('show_zotero_management', False):
-        render_overlay_backdrop()
-        with st.container():
-            st.markdown('<div class="management-overlay">', unsafe_allow_html=True)
-            render_zotero_management_overlay()
-            st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Settings
-    if st.session_state.get('show_settings', False):
-        render_overlay_backdrop()
-        with st.container():
-            st.markdown('<div class="management-overlay">', unsafe_allow_html=True)
-            render_settings_overlay()
-            st.markdown('</div>', unsafe_allow_html=True)
 
-def render_overlay_backdrop():
-    """Render backdrop for overlays"""
-    st.markdown('<div class="overlay-backdrop"></div>', unsafe_allow_html=True)
-
-def render_zotero_management_overlay():
-    """Render Zotero management overlay"""
-    st.markdown("## 🔗 Zotero Integration")
+# ============================================================================
+# Page Navigation System
+# ============================================================================
+def render_main_content_area(session_manager):
+    """Render main content area based on current page"""
+    current_page = st.session_state.get('current_page', 'chat')
     
-    # Close button
-    if st.button("✖️ Close", key="close_zotero_management"):
-        st.session_state.show_zotero_management = False
+    if current_page == 'chat':
+        # Render chat interface
+        chat_interface = EnhancedChatInterface(session_manager)
+        chat_interface.render()
+        
+    elif current_page == 'knowledge_bases':
+        # Render Knowledge Base management page
+        render_knowledge_bases_page(session_manager)
+        
+    elif current_page == 'zotero':
+        # Render Zotero management page  
+        render_zotero_page()
+        
+    elif current_page == 'settings':
+        # Render settings page
+        render_settings_page()
+        
+    else:
+        # Fallback to chat
+        st.session_state.current_page = 'chat'
+        st.rerun()
+
+
+def render_knowledge_bases_page(session_manager):
+    """Render the Knowledge Bases management page"""
+    st.markdown("# 📚 Knowledge Base Management")
+    
+    # Back to chat button
+    if st.button("← Back to Chat", key="back_to_chat_from_kb"):
+        st.session_state.current_page = 'chat'
         st.rerun()
     
     st.markdown("---")
     
+    # Use the existing KB management component but render as full page
+    kb_management = KBManagement(session_manager)
+    kb_management._render_kb_interface()  # Call the internal interface method directly
+
+
+def render_zotero_page():
+    """Render the Zotero management page"""
+    st.markdown("# 🔗 Zotero Integration")
+    
+    # Back to chat button
+    if st.button("← Back to Chat", key="back_to_chat_from_zotero"):
+        st.session_state.current_page = 'chat'
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # Use existing Zotero management logic but as full page
     zotero_status = st.session_state.get('zotero_status', 'unknown')
     
     if zotero_status == 'connected':
@@ -521,13 +487,14 @@ ZOTERO_LIBRARY_TYPE=user
             initialize_system()
             st.rerun()
 
-def render_settings_overlay():
-    """Render settings overlay"""
-    st.markdown("## ⚙️ Settings")
+
+def render_settings_page():
+    """Render the Settings page"""
+    st.markdown("# ⚙️ Settings")
     
-    # Close button
-    if st.button("✖️ Close", key="close_settings"):
-        st.session_state.show_settings = False
+    # Back to chat button
+    if st.button("← Back to Chat", key="back_to_chat_from_settings"):
+        st.session_state.current_page = 'chat'
         st.rerun()
     
     st.markdown("---")
@@ -560,80 +527,23 @@ def render_settings_overlay():
             test_zotero_connection()
     
     # Configuration instructions
-    st.markdown("---")
-    st.markdown("### 📋 Configuration Instructions")
+    st.markdown("### 📖 Configuration Instructions")
+    st.markdown("""
+    **To set up your APIs:**
     
-    st.markdown("**Add to your `.env` file in the project root:**")
-    st.code("""
-# Anthropic API (required for chat)
-ANTHROPIC_API_KEY=your-anthropic-api-key-here
-
-# Zotero API (optional, for library integration)
-ZOTERO_API_KEY=your-zotero-api-key-here
-ZOTERO_LIBRARY_ID=your-library-id-here
-ZOTERO_LIBRARY_TYPE=user
+    1. **Anthropic API**: Get your API key from [Anthropic Console](https://console.anthropic.com/)
+    2. **Zotero API**: Get your key from [Zotero Settings](https://www.zotero.org/settings/keys)
+    
+    Add them to your `.env` file in the project root.
     """)
-    
-    # System settings
-    st.markdown("---")
-    st.markdown("### ⚙️ System Configuration")
-    
-    if st.session_state.session_manager:
-        # Session cleanup
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Session Management:**")
-            if st.button("🧹 Clean Old Sessions", help="Remove empty sessions older than 24 hours"):
-                integration = get_session_integration()
-                cleaned = integration.cleanup_old_sessions(24)
-                if cleaned > 0:
-                    st.success(f"Cleaned up {cleaned} old empty sessions")
-                else:
-                    st.info("No old empty sessions to clean")
-        
-        with col2:
-            st.markdown("**Session Validation:**")
-            if st.button("🔍 Validate Sessions", help="Check session integrity"):
-                integration = get_session_integration()
-                validation = integration.validate_session_integrity()
-                
-                valid_count = len(validation['valid'])
-                corrupted_count = len(validation['corrupted'])
-                missing_docs_count = len(validation['missing_documents'])
-                
-                if corrupted_count == 0 and missing_docs_count == 0:
-                    st.success(f"All {valid_count} sessions are valid")
-                else:
-                    st.warning(f"Issues found: {corrupted_count} corrupted, {missing_docs_count} with missing documents")
-    
-    # System info
-    st.markdown("---")
-    st.markdown("### 📊 System Information")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Available Features:**")
-        features = ["📁 File Management", "🏗️ Knowledge Base Creation", "💬 Session Management"]
-        
-        if CHAT_AVAILABLE and config.anthropic_api_key:
-            features.append("🤖 AI Chat Assistant")
-        
-        if ZOTERO_AVAILABLE:
-            features.append("📚 Zotero Integration")
-        
-        for feature in features:
-            st.markdown(f"• {feature}")
-    
-    with col2:
-        st.markdown("**Storage Info:**")
-        if st.session_state.session_manager:
-            stats = st.session_state.session_manager.get_storage_stats()
-            st.markdown(f"• Sessions: {stats['total_sessions']}")
-            st.markdown(f"• Documents: {stats['total_documents']}")
-            st.markdown(f"• Storage: {stats['total_size_mb']:.1f} MB")
-            st.markdown(f"• Path: `{Path(stats['storage_path']).name}`")
+
+
+
+
+
+
+
+
 
 def test_anthropic_connection():
     """Test Anthropic API connection"""
@@ -752,21 +662,8 @@ def main():
     sidebar.render()
     
     # Main content area
-    with st.container():
-        # Check if any management overlays should be shown
-        showing_overlay = (
-            st.session_state.get('show_kb_management', False) or 
-            st.session_state.get('show_zotero_management', False) or 
-            st.session_state.get('show_settings', False)
-        )
-        
-        if showing_overlay:
-            # Render management overlays
-            render_management_overlays()
-        else:
-            # Normal enhanced chat interface
-            chat_interface = EnhancedChatInterface(session_manager)
-            chat_interface.render()
+    render_main_content_area(session_manager)
+
 
 # ============================================================================
 # Application Entry Point
