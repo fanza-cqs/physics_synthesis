@@ -131,6 +131,7 @@ def render_global_css():
     footer {visibility: hidden;}
     .stDeployButton {visibility: hidden;}
     
+
     /* Global app styling */
     .main .block-container {
         padding-top: 1rem;
@@ -421,7 +422,7 @@ def render_knowledge_bases_page(session_manager):
     # Use the new unified KB creation interface
     try:
         # Import the components from our standalone page
-        kb_page_path = project_root / "frontend_streamlit" / "pages" / "knowledge_base.py"
+        kb_page_path = project_root / "frontend_streamlit" / "my_pages" / "knowledge_base.py"
         
         # Import the functions we need
         import importlib.util
@@ -459,7 +460,7 @@ def render_knowledge_bases_page(session_manager):
 
 def render_kb_browse_tab():
     """Render KB browsing tab using new system"""
-    from .pages.knowledge_base import render_management_tab
+    from .my_pages.knowledge_base import render_management_tab
     
     config = st.session_state.get('config')
     if config:
@@ -470,7 +471,7 @@ def render_kb_browse_tab():
 
 def render_kb_settings_tab():
     """Render KB settings tab using new system"""
-    from .pages.knowledge_base import render_settings_tab
+    from .my_pages.knowledge_base import render_settings_tab
     
     config = st.session_state.get('config')
     if config:

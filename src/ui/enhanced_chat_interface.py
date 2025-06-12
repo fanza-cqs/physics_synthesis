@@ -36,65 +36,354 @@ class EnhancedChatInterface:
         #self.integration = get_session_integration_safe()
 
     
-    def render(self):
-        """Render the complete enhanced chat interface"""
-        #G: EnhancedChatInterface.render() called")
-        #print(f"🔍 DEBUG: self.integration = {self.integration}")
+ 
 
+    # Update your main render method to use the integrated bottom bar:
+    def render(self):
+        """Render the complete enhanced chat interface with integrated bottom bar"""
         if self.integration is None:
-            print("🔍 DEBUG: Integration is None in chat interface!")
             st.error("Session integration not available - using basic mode")
             current_session = self.session_manager.current_session
             if not current_session:
                 current_session = self.session_manager.create_session("New Session", auto_activate=True)
         else:
-            # Ensure we have a current session and sync state
             current_session = self.integration.ensure_current_session()
             self.integration.sync_session_to_streamlit(current_session)
         
-        # Ensure we have a current session and sync state
-        #current_session = self.integration.ensure_current_session()
-        #self.integration.sync_session_to_streamlit(current_session)
+        # Simple header - just title and context
+        self._render_simple_header(current_session)
         
-        # Render chat header with context controls
-        self._render_chat_header(current_session)
-        
-        # Render conversation messages
+        # Conversation area
         self._render_conversation(current_session)
         
-        # Render suggested questions (if no messages)
+        # Suggested questions (if no messages)
         if not current_session.has_messages():
             self._render_suggested_questions(current_session)
         
-        # Render chat input
-        self._render_chat_input()
+        # Integrated bottom bar with chat input + controls
+        self._render_integrated_bottom_bar()
         
-        # Handle any pending UI updates
+        # Handle UI updates
         self._handle_ui_updates()
+
+
+
+
+
+    def _handle_modal_display(self, session):
+        """Handle modal display based on session state - FIXED to only show one dialog at a time"""
+        
+        # Only show ONE dialog at a time - check in priority order
+        if st.session_state.get('show_kb_modal', False):
+            self._render_kb_modal_dialog(session)
+        elif st.session_state.get('show_upload_modal', False):
+            self._render_upload_modal_dialog(session)
+        elif st.session_state.get('show_settings_modal', False):
+            self._render_settings_modal_dialog(session)
+        # If none are set to True, no dialog is shown
+
+
+    @st.dialog("🧠 Switch Knowledge Base")
+    def _render_kb_modal_dialog(self, session):
+        """Render knowledge base modal using Streamlit's dialog"""
+        
+        config = st.session_state.get('config')
+        if not config:
+            st.error("Configuration not loaded")
+            return
+        
+        # Get available knowledge bases
+        available_kbs = list_knowledge_bases(config.knowledge_bases_folder)
+        kb_names = [kb['name'] if isinstance(kb, dict) else kb for kb in available_kbs]
+        
+        # Add "None" option for pure LLM chat
+        options = ["None (Pure Chat)"] + kb_names
+        
+        # Find current selection
+        current_kb = session.knowledge_base_name
+        if current_kb and current_kb in kb_names:
+            current_index = kb_names.index(current_kb) + 1
+        else:
+            current_index = 0
+        
+        # KB selector
+        selected = st.selectbox(
+            "Choose Knowledge Base:",
+            options,
+            index=current_index,
+            key="dialog_kb_selector"
+        )
+        
+        # Show current KB info
+        if current_kb:
+            st.info(f"Current KB: {current_kb}")
+        else:
+            st.info("Current Mode: Pure Chat")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("✅ Apply", key="apply_kb_dialog", type="primary", use_container_width=True):
+                new_kb = None if selected == "None (Pure Chat)" else selected
+                
+                if new_kb != current_kb:
+                    if self.integration.handle_kb_change(new_kb):
+                        if new_kb:
+                            st.success(f"✅ Switched to: {new_kb}")
+                            self.integration.handle_message_add("system", f"📚 Now using knowledge base: {new_kb}")
+                        else:
+                            st.success("✅ Switched to pure chat mode")
+                            self.integration.handle_message_add("system", "💬 Now in pure chat mode")
+                        
+                        # Clear the modal state
+                        st.session_state.active_modal = None
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to switch KB")
+                else:
+                    st.info("No change needed")
+        
+        with col2:
+            if st.button("❌ Cancel", key="cancel_kb_dialog", use_container_width=True):
+                # Clear the modal state
+                st.session_state.active_modal = None
+                st.rerun()
+
+
+
+
+    @st.dialog("📎 Upload Documents")
+    def _render_upload_modal_dialog(self, session):
+        """Render document upload modal using Streamlit's dialog"""
+        
+        uploaded_files = st.file_uploader(
+            "Choose files to upload:",
+            accept_multiple_files=True,
+            type=['pdf', 'txt', 'md', 'tex'],
+            key="dialog_file_uploader"
+        )
+        
+        if uploaded_files:
+            st.info(f"Ready to upload {len(uploaded_files)} file(s)")
+            
+            for file in uploaded_files:
+                st.text(f"📄 {file.name} ({file.size / 1024:.1f} KB)")
+        
+        # Show current documents
+        if session.documents:
+            st.markdown("**Current Documents:**")
+            for i, doc in enumerate(session.documents):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.text(f"📄 {doc.original_name}")
+                    st.caption(f"Size: {doc.file_size / 1024:.1f} KB")
+                with col2:
+                    if st.button("🗑️", key=f"dialog_remove_{i}", help="Remove"):
+                        if self.session_manager.remove_document_from_current(doc.filename):
+                            st.success("✅ Removed!")
+                            self.integration.handle_message_add("system", f"📎 Removed: {doc.original_name}")
+                            st.rerun()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            upload_disabled = not uploaded_files
+            if st.button("📤 Upload", key="upload_dialog_files", type="primary", use_container_width=True, disabled=upload_disabled):
+                if uploaded_files:
+                    uploaded_names = self.integration.handle_document_upload(uploaded_files)
+                    
+                    if uploaded_names:
+                        st.success(f"✅ Added {len(uploaded_names)} document(s)")
+                        doc_list = ", ".join(uploaded_names)
+                        self.integration.handle_message_add("system", f"📎 Added documents: {doc_list}")
+                        # Clear the modal state
+                        st.session_state.active_modal = None
+                        st.rerun()
+                    else:
+                        st.error("❌ Upload failed")
+        
+        with col2:
+            if st.button("❌ Cancel", key="cancel_upload_dialog", use_container_width=True):
+                # Clear the modal state
+                st.session_state.active_modal = None
+                st.rerun()
+
+
     
-    def _render_chat_header(self, session):
-        """Render enhanced chat header with session context"""
-        # Title with session indicator
+
+
+
+    @st.dialog("⚙️ Chat Settings")
+    def _render_settings_modal_dialog(self, session):
+        """Render chat settings modal using Streamlit's dialog"""
+        
+        st.markdown("Adjust your chat preferences:")
+        
+        # Temperature
+        temperature = st.slider(
+            "🌡️ Creativity Level",
+            0.0, 1.0,
+            value=session.settings.temperature,
+            step=0.1,
+            key="dialog_temperature",
+            help="Higher values make responses more creative and varied"
+        )
+        
+        # Max sources
+        max_sources = st.slider(
+            "📄 Maximum Sources",
+            1, 20,
+            value=session.settings.max_sources,
+            key="dialog_max_sources",
+            help="Maximum number of knowledge base sources to use per response"
+        )
+        
+        # Response style
+        style_options = ["detailed", "concise", "technical"]
+        current_style_index = style_options.index(session.settings.response_style) if session.settings.response_style in style_options else 0
+        
+        response_style = st.selectbox(
+            "📝 Response Style",
+            style_options,
+            index=current_style_index,
+            key="dialog_response_style",
+            help="Preferred style for AI responses"
+        )
+        
+        # Show current settings
+        st.markdown("**Current Settings:**")
+        st.info(f"Temperature: {session.settings.temperature} | Max Sources: {session.settings.max_sources} | Style: {session.settings.response_style}")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("✅ Apply", key="apply_settings_dialog", type="primary", use_container_width=True):
+                self.session_manager.update_current_session_settings(
+                    temperature=temperature,
+                    max_sources=max_sources,
+                    response_style=response_style
+                )
+                st.success("✅ Settings updated!")
+                # Clear the modal state
+                st.session_state.active_modal = None
+                st.rerun()
+        
+        with col2:
+            if st.button("🗑️ Clear Chat", key="clear_chat_dialog", type="secondary", use_container_width=True):
+                if self.integration.handle_clear_conversation():
+                    st.success("✅ Chat cleared!")
+                    # Clear the modal state
+                    st.session_state.active_modal = None
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to clear chat")
+        
+        with col3:
+            if st.button("❌ Cancel", key="cancel_settings_dialog", use_container_width=True):
+                # Clear the modal state
+                st.session_state.active_modal = None
+                st.rerun()
+
+
+
+
+    def _render_simple_header(self, session):
+        """Render simple header with just title and context"""
         if session.name != "New Session":
             st.markdown(f"### 💬 {session.name}")
         else:
             st.markdown("### 💬 Research Assistant")
         
-        # Context controls row
-        col1, col2, col3 = st.columns([2, 2, 1])
+        # Show current context in a compact way
+        context_parts = []
         
-        with col1:
-            self._render_kb_selector(session)
+        if session.knowledge_base_name:
+            context_parts.append(f"**KB:** {session.knowledge_base_name}")
+        else:
+            context_parts.append("**Mode:** Pure Chat")
         
-        with col2:
-            self._render_document_upload()
+        if session.documents:
+            context_parts.append(f"**Docs:** {len(session.documents)}")
         
-        with col3:
-            self._render_chat_settings(session)
+        user_messages = len([m for m in session.messages if m.role == "user"])
+        if user_messages > 0:
+            context_parts.append(f"**Messages:** {user_messages}")
         
-        # Session context display
-        self._render_session_context(session)
+        if context_parts:
+            context_text = " • ".join(context_parts)
+            st.info(context_text)
+
+    def _render_integrated_bottom_bar(self):
+        """Render integrated bottom bar with chat input and control buttons - IMPROVED"""
+        session_id = st.session_state.get('current_session_id', 'default')
+        current_session = self.session_manager.current_session
+        
+        # Create the integrated bottom container
+        st.markdown('<div class="integrated-bottom-bar">', unsafe_allow_html=True)
+        
+        # Use columns for layout: chat input + control buttons
+        col_input, col_controls = st.columns([4, 1])
+        
+        with col_input:
+            # The chat input (Streamlit will make this sticky)
+            if prompt := st.chat_input("Ask about your research...", key=f"integrated_chat_input_{session_id}"):
+                self._process_user_message(prompt)
+        
+        with col_controls:
+            # Control buttons in a row
+            btn_col1, btn_col2, btn_col3 = st.columns(3)
+            
+            with btn_col1:
+                if st.button("🧠", key="integrated_kb_btn", help="Switch Knowledge Base"):
+                    st.session_state.active_modal = "kb"
+                    st.rerun()
+            
+            with btn_col2:
+                if st.button("📎", key="integrated_upload_btn", help="Upload Documents"):
+                    st.session_state.active_modal = "upload" 
+                    st.rerun()
+            
+            with btn_col3:
+                if st.button("⚙️", key="integrated_settings_btn", help="Chat Settings"):
+                    st.session_state.active_modal = "settings"
+                    st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Handle modals - IMPROVED approach
+        self._handle_single_modal_display(current_session)
+
+
+    def _handle_single_modal_display(self, session):
+        """Handle single modal display based on active_modal state"""
+        
+        active_modal = st.session_state.get('active_modal', None)
+        
+        if active_modal == "kb":
+            self._render_kb_modal_dialog(session)
+        elif active_modal == "upload":
+            self._render_upload_modal_dialog(session)
+        elif active_modal == "settings":
+            self._render_settings_modal_dialog(session)
+
+
+
+
     
+    def _render_chat_header(self, session):
+        """Render minimal chat header - just title and context"""
+        # Simple title
+        if session.name != "New Session":
+            st.markdown(f"### 💬 {session.name}")
+        else:
+            st.markdown("### 💬 Research Assistant")
+        
+        # Just show current context - no controls
+        self._render_minimal_context(session)
+    
+
+
+
     def _render_kb_selector(self, session):
         """Render enhanced knowledge base selector"""
         config = st.session_state.get('config')
@@ -334,13 +623,210 @@ class EnhancedChatInterface:
                 if st.button(f"❓ {suggestion}", key=f"suggestion_{session.id}_{i}"):
                     self._process_user_message(suggestion)
     
-    def _render_chat_input(self):
-        """Render enhanced chat input"""
-        # Chat input with session-specific key
-        session_id = st.session_state.get('current_session_id', 'default')
+    def _render_minimal_context(self, session):
+        """Show minimal context info"""
+        context_parts = []
         
-        if prompt := st.chat_input("Ask about your research...", key=f"chat_input_{session_id}"):
-            self._process_user_message(prompt)
+        # Knowledge base info
+        if session.knowledge_base_name:
+            context_parts.append(f"**KB:** {session.knowledge_base_name}")
+        else:
+            context_parts.append("**Mode:** Pure Chat")
+        
+        # Document and message count
+        if session.documents:
+            context_parts.append(f"**Docs:** {len(session.documents)}")
+        
+        user_messages = len([m for m in session.messages if m.role == "user"])
+        if user_messages > 0:
+            context_parts.append(f"**Messages:** {user_messages}")
+        
+        if context_parts:
+            context_text = " • ".join(context_parts)
+            st.info(context_text)
+
+    
+
+
+    def _render_chat_input(self):
+        """Render enhanced chat input with inline controls"""
+        # Create columns for the input area
+        col1, col2 = st.columns([4, 1])
+        
+        with col1:
+            # Main chat input
+            session_id = st.session_state.get('current_session_id', 'default')
+            prompt = st.chat_input("Ask about your research...", key=f"chat_input_{session_id}")
+            
+            if prompt:
+                self._process_user_message(prompt)
+        
+        with col2:
+            # Inline control buttons
+            self._render_inline_controls()
+
+
+    def _render_inline_controls(self):
+        """Render inline control buttons next to chat input"""
+        # Get current session for context
+        current_session = self.session_manager.current_session
+        
+        # Knowledge Base Quick Switcher
+        with st.popover("🧠", help="Switch Knowledge Base"):
+            self._render_kb_quick_switcher(current_session)
+        
+        # Document Upload
+        with st.popover("📎", help="Upload Documents"):
+            self._render_document_quick_upload(current_session)
+        
+        # Settings
+        with st.popover("⚙️", help="Chat Settings"):
+            self._render_chat_quick_settings(current_session)
+
+
+    def _render_chat_quick_settings(self, session):
+        """Quick chat settings in popover"""
+        st.markdown("**Chat Settings**")
+        
+        # Temperature
+        temperature = st.slider(
+            "🌡️ Creativity",
+            0.0, 1.0,
+            value=session.settings.temperature,
+            step=0.1,
+            key=f"quick_temp_{session.id}"
+        )
+        
+        # Max sources
+        max_sources = st.slider(
+            "📄 Max Sources",
+            1, 20,
+            value=session.settings.max_sources,
+            key=f"quick_sources_{session.id}"
+        )
+        
+        # Response style
+        style_options = ["detailed", "concise", "technical"]
+        current_style_index = style_options.index(session.settings.response_style) if session.settings.response_style in style_options else 0
+        
+        response_style = st.selectbox(
+            "📝 Style",
+            style_options,
+            index=current_style_index,
+            key=f"quick_style_{session.id}"
+        )
+        
+        # Apply settings
+        if st.button("✅ Apply Settings", key=f"apply_settings_{session.id}", use_container_width=True):
+            self.session_manager.update_current_session_settings(
+                temperature=temperature,
+                max_sources=max_sources,
+                response_style=response_style
+            )
+            st.success("✅ Settings updated!")
+            st.rerun()
+        
+        # Clear conversation
+        st.markdown("---")
+        if st.button("🗑️ Clear Chat", key=f"quick_clear_{session.id}", type="secondary", use_container_width=True):
+            if self.integration.handle_clear_conversation():
+                st.success("✅ Chat cleared!")
+                st.rerun()
+
+
+
+    def _render_document_quick_upload(self, session):
+        """Quick document upload in popover"""
+        st.markdown("**Upload Documents**")
+        
+        uploaded_files = st.file_uploader(
+            "Choose files:",
+            accept_multiple_files=True,
+            type=['pdf', 'txt', 'md', 'tex'],
+            key=f"quick_uploader_{session.id}",
+            label_visibility="collapsed"
+        )
+        
+        if uploaded_files:
+            if st.button("📤 Upload", key=f"quick_upload_{session.id}", use_container_width=True):
+                uploaded_names = self.integration.handle_document_upload(uploaded_files)
+                
+                if uploaded_names:
+                    st.success(f"✅ Added {len(uploaded_names)} document(s)")
+                    doc_list = ", ".join(uploaded_names)
+                    self.integration.handle_message_add("system", f"📎 Added documents: {doc_list}")
+                    st.rerun()
+                else:
+                    st.error("❌ Upload failed")
+        
+        # Show current documents
+        if session.documents:
+            st.markdown("**Current Documents:**")
+            for doc in session.documents[-3:]:  # Show last 3
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.caption(f"📄 {doc.original_name}")
+                with col2:
+                    if st.button("🗑️", key=f"quick_remove_{doc.filename}", help="Remove"):
+                        if self.session_manager.remove_document_from_current(doc.filename):
+                            st.success("✅ Removed!")
+                            self.integration.handle_message_add("system", f"📎 Removed: {doc.original_name}")
+                            st.rerun()
+            
+            if len(session.documents) > 3:
+                st.caption(f"... and {len(session.documents) - 3} more")
+
+
+
+    def _render_kb_quick_switcher(self, session):
+        """Quick KB switcher in popover"""
+        st.markdown("**Switch Knowledge Base**")
+        
+        config = st.session_state.get('config')
+        if not config:
+            st.warning("⚠️ Configuration not loaded")
+            return
+        
+        # Get available knowledge bases
+        available_kbs = list_knowledge_bases(config.knowledge_bases_folder)
+        kb_names = [kb['name'] if isinstance(kb, dict) else kb for kb in available_kbs]
+        
+        # Add "None" option for pure LLM chat
+        options = ["None (Pure Chat)"] + kb_names
+        
+        # Find current selection
+        current_kb = session.knowledge_base_name
+        if current_kb and current_kb in kb_names:
+            current_index = kb_names.index(current_kb) + 1
+        else:
+            current_index = 0
+        
+        # KB selector
+        selected = st.selectbox(
+            "Choose KB:",
+            options,
+            index=current_index,
+            key=f"kb_quick_selector_{session.id}",
+            label_visibility="collapsed"
+        )
+        
+        # Apply button
+        if st.button("✅ Apply KB Change", key=f"apply_kb_{session.id}", use_container_width=True):
+            new_kb = None if selected == "None (Pure Chat)" else selected
+            
+            if new_kb != current_kb:
+                if self.integration.handle_kb_change(new_kb):
+                    if new_kb:
+                        st.success(f"✅ Switched to: {new_kb}")
+                        self.integration.handle_message_add("system", f"📚 Now using knowledge base: {new_kb}")
+                    else:
+                        st.success("✅ Switched to pure chat mode")
+                        self.integration.handle_message_add("system", "💬 Now in pure chat mode")
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to switch KB")
+
+
     
     def _get_contextual_suggestions(self, session) -> List[str]:
         """Get enhanced contextual suggestions"""
@@ -604,11 +1090,167 @@ Maintain a professional yet approachable tone. When explaining complex concepts,
                 st.session_state.last_session_save = current_time
 
 
+# Replace your render_enhanced_chat_css() with this:
+
+# Replace your render_enhanced_chat_css() with this:
+
 def render_enhanced_chat_css():
-    """Render enhanced CSS for the chat interface"""
+    """Render enhanced CSS for integrated bottom bar with chat input + controls"""
     st.markdown("""
     <style>
-    /* Enhanced chat message styling */
+    /* INTEGRATED BOTTOM BAR - Force sticky positioning */
+    
+    .integrated-bottom-bar {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        z-index: 1000 !important;
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(8px) !important;
+        padding: 1rem !important;
+        border-top: 2px solid #e2e8f0 !important;
+        box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1) !important;
+        border-radius: 16px 16px 0 0 !important;
+    }
+    
+    /* Override Streamlit's default chat input positioning */
+    .integrated-bottom-bar .stChatInput {
+        position: relative !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    /* Style the chat input within our container */
+    .integrated-bottom-bar .stChatInput > div {
+        border-radius: 12px !important;
+        border: 2px solid #e2e8f0 !important;
+        background: white !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+        transition: all 0.3s ease !important;
+        margin: 0 !important;
+    }
+    
+    .integrated-bottom-bar .stChatInput > div:focus-within {
+        border-color: #667eea !important;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2) !important;
+        transform: translateY(-1px) !important;
+    }
+    
+    /* Style the control buttons */
+    .integrated-bottom-bar .stButton > button {
+        width: 48px !important;
+        height: 48px !important;
+        border-radius: 12px !important;
+        border: 2px solid #e2e8f0 !important;
+        font-size: 1.3rem !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: all 0.3s ease !important;
+        margin: 0 !important;
+        min-width: 48px !important;
+        background: white !important;
+        color: #6b7280 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+    }
+    
+    .integrated-bottom-bar .stButton > button:hover {
+        transform: translateY(-2px) scale(1.05) !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15) !important;
+        border-color: #667eea !important;
+    }
+    
+    /* Individual button colors on hover */
+    .integrated-bottom-bar div[data-testid="column"]:nth-child(1) .stButton > button:hover {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+        color: white !important;
+        border-color: #10b981 !important;
+    }
+    
+    .integrated-bottom-bar div[data-testid="column"]:nth-child(2) .stButton > button:hover {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+        color: white !important;
+        border-color: #f59e0b !important;
+    }
+    
+    .integrated-bottom-bar div[data-testid="column"]:nth-child(3) .stButton > button:hover {
+        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%) !important;
+        color: white !important;
+        border-color: #6b7280 !important;
+    }
+    
+    /* Ensure proper spacing between input and buttons */
+    .integrated-bottom-bar div[data-testid="column"] {
+        padding: 0 0.25rem !important;
+    }
+    
+    .integrated-bottom-bar div[data-testid="column"]:first-child {
+        padding-right: 1rem !important;
+    }
+    
+    /* Make sure buttons align vertically with input */
+    .integrated-bottom-bar div[data-testid="column"]:last-child {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0.5rem;
+    }
+    
+    /* Adjust main content to account for sticky bottom bar */
+    .main .block-container {
+        padding-bottom: 120px; /* Space for the sticky bar */
+    }
+    
+    /* DIALOG STYLING (same as before) */
+    div[data-testid="stModal"] {
+        background: rgba(0, 0, 0, 0.5) !important;
+        backdrop-filter: blur(4px) !important;
+    }
+    
+    div[data-testid="stModal"] > div {
+        background: white !important;
+        border-radius: 16px !important;
+        padding: 2rem !important;
+        max-width: 500px !important;
+        width: 90vw !important;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3) !important;
+        animation: modalSlideIn 0.3s ease-out !important;
+    }
+    
+    @keyframes modalSlideIn {
+        from {
+            opacity: 0;
+            transform: scale(0.9) translateY(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+    
+    /* Dialog buttons */
+    div[data-testid="stModal"] .stButton > button {
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        transition: all 0.3s ease !important;
+        padding: 0.6rem 1.2rem !important;
+    }
+    
+    div[data-testid="stModal"] .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border: none !important;
+    }
+    
+    div[data-testid="stModal"] .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4) !important;
+    }
+    
+    /* ENHANCED CHAT STYLING */
     .stChatMessage {
         margin-bottom: 1.5rem;
         border-radius: 12px;
@@ -625,32 +1267,17 @@ def render_enhanced_chat_css():
         border: 1px solid #d1d5db;
     }
     
-    /* Enhanced chat input */
-    .stChatInput > div {
-        border-radius: 12px;
-        border: 2px solid #e2e8f0;
-        background: white;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
-    }
-    
-    .stChatInput > div:focus-within {
-        border-color: #667eea;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-        transform: translateY(-1px);
-    }
-    
-    /* Enhanced context display */
-    .session-context {
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        border: 1px solid #cbd5e0;
+    /* Context display */
+    .stInfo {
+        background: linear-gradient(135deg, #e0f2fe 0%, #b3e5fc 100%);
+        border: 1px solid #0288d1;
+        color: #01579b;
         border-radius: 10px;
         padding: 1rem;
         margin: 1rem 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
     
-    /* Enhanced suggestion buttons */
+    /* Suggestion buttons */
     .suggestion-button {
         background: white;
         border: 2px solid #e2e8f0;
@@ -672,119 +1299,60 @@ def render_enhanced_chat_css():
         box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
     }
     
-    /* Enhanced KB selector */
-    .stSelectbox > div > div {
-        border-radius: 10px;
-        border: 2px solid #e2e8f0;
-        background: white;
-        transition: all 0.3s ease;
-    }
-    
-    .stSelectbox > div > div:focus-within {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-    
-    /* Enhanced file uploader */
-    .stFileUploader > div {
-        border: 2px dashed #667eea;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-        padding: 1.5rem;
-        text-align: center;
-        transition: all 0.3s ease;
-    }
-    
-    .stFileUploader > div:hover {
-        border-color: #764ba2;
-        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
-        transform: translateY(-1px);
-    }
-    
-    /* Enhanced settings expander */
-    .stExpander {
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        background: white;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    }
-    
-    .stExpander > div > div > div[data-testid="stExpanderHeader"] {
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        border-radius: 10px 10px 0 0;
-        padding: 0.75rem;
-    }
-    
-    /* Enhanced metrics and info displays */
-    .stInfo {
-        background: linear-gradient(135deg, #e0f2fe 0%, #b3e5fc 100%);
-        border: 1px solid #0288d1;
-        color: #01579b;
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
-    
+    /* Success/Error messages */
     .stSuccess {
-        background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%);
-        border: 1px solid #4caf50;
-        color: #2e7d32;
+        background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+        border: 1px solid #10b981;
+        color: #065f46;
         border-radius: 10px;
         padding: 1rem;
         margin: 1rem 0;
     }
     
     .stError {
-        background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-        border: 1px solid #f44336;
-        color: #c62828;
+        background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+        border: 1px solid #ef4444;
+        color: #991b1b;
         border-radius: 10px;
         padding: 1rem;
         margin: 1rem 0;
     }
     
-    /* Document management styling */
-    .document-item {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        transition: all 0.3s ease;
-    }
-    
-    .document-item:hover {
-        background: #f8fafc;
-        border-color: #667eea;
-        transform: translateX(4px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
-    }
-    
-    /* Loading spinner enhancement */
-    .stSpinner > div {
-        border-top-color: #667eea;
-        animation: spin 1s linear infinite;
-    }
-    
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    
     /* Responsive design */
     @media (max-width: 768px) {
-        .stChatMessage {
-            margin-bottom: 1rem;
+        .integrated-bottom-bar {
+            padding: 0.75rem;
         }
         
-        .suggestion-button {
-            padding: 0.75rem;
-            font-size: 0.9rem;
+        .integrated-bottom-bar .stButton > button {
+            width: 42px !important;
+            height: 42px !important;
+            font-size: 1.1rem !important;
         }
         
-        .session-context {
-            padding: 0.75rem;
-            font-size: 0.9rem;
+        .main .block-container {
+            padding-bottom: 100px;
+        }
+        
+        div[data-testid="stModal"] > div {
+            padding: 1.5rem !important;
+            margin: 1rem !important;
+        }
+    }
+    
+    /* Animation for the bottom bar */
+    .integrated-bottom-bar {
+        animation: slideUpIn 0.3s ease-out;
+    }
+    
+    @keyframes slideUpIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
         }
     }
     </style>

@@ -5,7 +5,7 @@ Complete Integrated Knowledge Base Management Page.
 Single file that contains all the unified KB creation functionality.
 Ready to replace your existing frontend_streamlit/pages/knowledge_base.py
 
-Location: frontend_streamlit/pages/knowledge_base.py
+Location: frontend_streamlit/my_pages/knowledge_base.py
 """
 
 import streamlit as st
