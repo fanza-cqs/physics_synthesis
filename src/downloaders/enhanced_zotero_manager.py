@@ -52,8 +52,8 @@ items = manager.get_all_items()
 attachments = manager.get_item_attachments(item_key)
 
 # Enhanced operations (added by this class)
-result = manager.sync_collection_with_doi_downloads(collection_id)
-summary = manager.get_collection_sync_summary(collection_id)
+result = manager.sync_collection_with_doi_downloads_enhanced(collection_id)
+summary = manager.get_collection_sync_summary_fast(collection_id)
 
 GRACEFUL DEGRADATION:
 ====================
@@ -68,7 +68,7 @@ import time
 import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Set
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Import parent class - this establishes the inheritance relationship
 from .zotero_manager import ZoteroLibraryManager, ZoteroItem
@@ -115,6 +115,8 @@ class CollectionSyncResult:
     processing_time: float
     downloaded_files: List[str]
     errors: List[str]
+    download_metadata: List[Dict[str, Any]] = field(default_factory=list)  # ADD THIS LINE
+
 
 class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
     """
@@ -187,7 +189,7 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
     # DOI Download Methods (Enhanced functionality)
     # ============================================
     
-    def setup_selenium_driver(self) -> Optional[webdriver.Chrome]:
+    def setup_selenium_driver(self) -> Optional["webdriver.Chrome"]:
         """
         Set up Chrome WebDriver for PDF downloads.
         
@@ -238,7 +240,7 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
             logger.error(f"Failed to setup Selenium driver: {e}")
             return None
     
-    def download_pdf_from_doi(self, driver: webdriver.Chrome, zotero_item: ZoteroItem) -> DOIDownloadResult:
+    def download_pdf_from_doi(self, driver: "webdriver.Chrome", zotero_item: ZoteroItem) -> DOIDownloadResult:
         """
         Download PDF from DOI using browser automation.
         
@@ -510,123 +512,6 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
         logger.info(f"📋 Final result: success={result.success}, method={result.method}, error={result.error}")
         return result
     
-    def sync_collection_with_doi_downloads(self, 
-                                         collection_id: str,
-                                         max_doi_downloads: int = None,
-                                         headless: bool = True) -> CollectionSyncResult:
-        """
-        Sync a collection and download PDFs via DOI for items without attachments.
-        
-        Args:
-            collection_id: Zotero collection ID
-            max_doi_downloads: Maximum DOI downloads to attempt (for testing)
-            headless: Run browser in headless mode
-        
-        Returns:
-            CollectionSyncResult with sync statistics
-        """
-        start_time = time.time()
-        
-        logger.info(f"Starting collection sync with DOI downloads: {collection_id}")
-        
-        result = CollectionSyncResult(
-            total_items=0,
-            items_with_existing_pdfs=0,
-            items_with_dois_no_pdfs=0,
-            doi_download_attempts=0,
-            successful_doi_downloads=0,
-            failed_doi_downloads=0,
-            processing_time=0.0,
-            downloaded_files=[],
-            errors=[]
-        )
-        
-        try:
-            # Get items from collection
-            collection_items = self.get_all_items(collections=[collection_id])
-            result.total_items = len(collection_items)
-            
-            logger.info(f"Found {result.total_items} items in collection")
-            
-            # Categorize items
-            items_needing_doi_download = []
-            
-            for item in collection_items:
-                # Check if item has PDF attachments
-                attachments = self.get_item_attachments(item.key)
-                pdf_attachments = [att for att in attachments if att.content_type == 'application/pdf']
-                
-                if pdf_attachments:
-                    result.items_with_existing_pdfs += 1
-                elif item.doi and item.doi.strip():
-                    items_needing_doi_download.append(item)
-                    result.items_with_dois_no_pdfs += 1
-            
-            logger.info(f"Items with existing PDFs: {result.items_with_existing_pdfs}")
-            logger.info(f"Items needing DOI download: {result.items_with_dois_no_pdfs}")
-            
-            # Perform DOI downloads if enabled
-            if self.doi_downloads_enabled and items_needing_doi_download:
-                # Limit for testing
-                if max_doi_downloads:
-                    items_needing_doi_download = items_needing_doi_download[:max_doi_downloads]
-                
-                result.doi_download_attempts = len(items_needing_doi_download)
-                
-                logger.info(f"Starting DOI downloads for {result.doi_download_attempts} items")
-                
-                # Set up browser
-                self.browser_headless = headless
-                driver = self.setup_selenium_driver()
-                
-                if driver:
-                    try:
-                        for i, item in enumerate(items_needing_doi_download, 1):
-                            logger.info(f"DOI download {i}/{result.doi_download_attempts}: {item.title[:50]}...")
-                            
-                            download_result = self.download_pdf_from_doi(driver, item)
-                            
-                            if download_result.success:
-                                result.successful_doi_downloads += 1
-                                result.downloaded_files.append(download_result.file_path)
-                                logger.info(f"✅ Downloaded: {Path(download_result.file_path).name}")
-                            else:
-                                result.failed_doi_downloads += 1
-                                result.errors.append(f"{item.title}: {download_result.error}")
-                                logger.warning(f"❌ Failed: {download_result.error}")
-                            
-                            # Small delay between downloads
-                            time.sleep(2)
-                    
-                    finally:
-                        driver.quit()
-                        logger.info("Browser closed")
-                
-                else:
-                    result.errors.append("Failed to initialize browser for DOI downloads")
-            
-            else:
-                if not self.doi_downloads_enabled:
-                    logger.info("DOI downloads disabled - skipping")
-                else:
-                    logger.info("No items need DOI downloads")
-        
-        except Exception as e:
-            error_msg = f"Error during collection sync: {e}"
-            result.errors.append(error_msg)
-            logger.error(error_msg)
-        
-        result.processing_time = time.time() - start_time
-        
-        # Log final summary
-        logger.info(f"Collection sync complete:")
-        logger.info(f"  Total items: {result.total_items}")
-        logger.info(f"  Items with PDFs: {result.items_with_existing_pdfs}")
-        logger.info(f"  DOI downloads attempted: {result.doi_download_attempts}")
-        logger.info(f"  DOI downloads successful: {result.successful_doi_downloads}")
-        logger.info(f"  Processing time: {result.processing_time:.2f}s")
-        
-        return result
     
     def get_collection_sync_summary(self, collection_id: str) -> Dict[str, Any]:
         """
@@ -821,123 +706,6 @@ class EnhancedZoteroLibraryManager(ZoteroLibraryManager):
             logger.error(f"Error getting collection summary: {e}")
             return {'error': str(e)}
 
-    def sync_collection_with_doi_downloads_fast(self, 
-                                            collection_id: str,
-                                            max_doi_downloads: int = None,
-                                            headless: bool = True) -> CollectionSyncResult:
-        """
-        Sync a collection and download PDFs via DOI for items without attachments (FAST VERSION - FIXED).
-        
-        Args:
-            collection_id: Zotero collection ID
-            max_doi_downloads: Maximum DOI downloads to attempt (for testing)
-            headless: Run browser in headless mode
-        
-        Returns:
-            CollectionSyncResult with sync statistics
-        """
-        start_time = time.time()
-        
-        logger.info(f"Starting FAST collection sync with DOI downloads: {collection_id}")
-        
-        result = CollectionSyncResult(
-            total_items=0,
-            items_with_existing_pdfs=0,
-            items_with_dois_no_pdfs=0,
-            doi_download_attempts=0,
-            successful_doi_downloads=0,
-            failed_doi_downloads=0,
-            processing_time=0.0,
-            downloaded_files=[],
-            errors=[]
-        )
-        
-        try:
-            # Get items directly from collection (FIXED!)
-            collection_items = self.get_collection_items_direct(collection_id)
-            result.total_items = len(collection_items)
-            
-            logger.info(f"Found {result.total_items} items in collection")
-            
-            # Categorize items
-            items_needing_doi_download = []
-            
-            for item in collection_items:
-                # Check if item has PDF attachments
-                attachments = self.get_item_attachments(item.key)
-                pdf_attachments = [att for att in attachments if att.content_type == 'application/pdf']
-                
-                if pdf_attachments:
-                    result.items_with_existing_pdfs += 1
-                elif item.doi and item.doi.strip():
-                    items_needing_doi_download.append(item)
-                    result.items_with_dois_no_pdfs += 1
-            
-            logger.info(f"Items with existing PDFs: {result.items_with_existing_pdfs}")
-            logger.info(f"Items needing DOI download: {result.items_with_dois_no_pdfs}")
-            
-            # Perform DOI downloads if enabled
-            if self.doi_downloads_enabled and items_needing_doi_download:
-                # Limit for testing
-                if max_doi_downloads:
-                    items_needing_doi_download = items_needing_doi_download[:max_doi_downloads]
-                
-                result.doi_download_attempts = len(items_needing_doi_download)
-                
-                logger.info(f"Starting DOI downloads for {result.doi_download_attempts} items")
-                
-                # Set up browser
-                self.browser_headless = headless
-                driver = self.setup_selenium_driver()
-                
-                if driver:
-                    try:
-                        for i, item in enumerate(items_needing_doi_download, 1):
-                            logger.info(f"DOI download {i}/{result.doi_download_attempts}: {item.title[:50]}...")
-                            
-                            download_result = self.download_pdf_from_doi(driver, item)
-                            
-                            if download_result.success:
-                                result.successful_doi_downloads += 1
-                                result.downloaded_files.append(download_result.file_path)
-                                logger.info(f"✅ Downloaded: {Path(download_result.file_path).name}")
-                            else:
-                                result.failed_doi_downloads += 1
-                                result.errors.append(f"{item.title}: {download_result.error}")
-                                logger.warning(f"❌ Failed: {download_result.error}")
-                            
-                            # Small delay between downloads
-                            time.sleep(2)
-                    
-                    finally:
-                        driver.quit()
-                        logger.info("Browser closed")
-                
-                else:
-                    result.errors.append("Failed to initialize browser for DOI downloads")
-            
-            else:
-                if not self.doi_downloads_enabled:
-                    logger.info("DOI downloads disabled - skipping")
-                else:
-                    logger.info("No items need DOI downloads")
-        
-        except Exception as e:
-            error_msg = f"Error during collection sync: {e}"
-            result.errors.append(error_msg)
-            logger.error(error_msg)
-        
-        result.processing_time = time.time() - start_time
-        
-        # Log final summary
-        logger.info(f"FAST collection sync complete:")
-        logger.info(f"  Total items: {result.total_items}")
-        logger.info(f"  Items with PDFs: {result.items_with_existing_pdfs}")
-        logger.info(f"  DOI downloads attempted: {result.doi_download_attempts}")
-        logger.info(f"  DOI downloads successful: {result.successful_doi_downloads}")
-        logger.info(f"  Processing time: {result.processing_time:.2f}s")
-        
-        return result
     
     def sync_collection_with_doi_downloads_enhanced(self, collection_id: str, max_doi_downloads: int = None, headless: bool = True) -> CollectionSyncResult:
         """

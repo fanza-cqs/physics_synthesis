@@ -82,14 +82,16 @@ except ImportError as e:
     st.error(f"❌ Sessions module import failed: {e}")
     st.stop()
 
+# NEW IMPORTS (use these instead):
 try:
-    from src.ui.enhanced_sidebar import EnhancedSidebar, render_enhanced_sidebar_css
-    from src.ui.enhanced_chat_interface import EnhancedChatInterface, render_enhanced_chat_css
+    from src.ui.sidebar import Sidebar, render_sidebar_css
+    from src.ui.chat_interface import ChatInterface, render_chat_css
     from src.ui.kb_management import KBManagement, render_kb_management_css
     UI_AVAILABLE = True
 except ImportError as e:
     st.error(f"❌ Enhanced UI components import failed: {e}")
     st.stop()
+
 
 try:
     from src.chat import LiteratureAssistant
@@ -229,8 +231,8 @@ def render_global_css():
 def render_all_enhanced_css():
     """Render all enhanced CSS components"""
     render_global_css()
-    render_enhanced_sidebar_css()
-    render_enhanced_chat_css()
+    render_sidebar_css()
+    render_chat_css()
     render_kb_management_css()
 
 # ============================================================================
@@ -387,7 +389,7 @@ def render_main_content_area(session_manager):
     
     if current_page == 'chat':
         # Render chat interface
-        chat_interface = EnhancedChatInterface(session_manager)
+        chat_interface = ChatInterface(session_manager)
         chat_interface.render()
         
     elif current_page == 'knowledge_bases':
@@ -727,7 +729,7 @@ def main():
     session_manager = st.session_state.session_manager
     
     # Render enhanced sidebar
-    sidebar = EnhancedSidebar(session_manager)
+    sidebar = Sidebar(session_manager)
     sidebar.render()
     
     # Main content area
