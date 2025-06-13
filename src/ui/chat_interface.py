@@ -467,7 +467,7 @@ class ChatInterface:
             current_time = time.time()
             
             if current_time - last_save > 30:  # Every 30 seconds
-                self.integration.sync_streamlit_to_session(current_session)
+                self.integration.sync_session_to_streamlit(current_session)  # ← Fixed line
                 self.session_manager.save_current_session()
                 st.session_state.last_session_save = current_time
 

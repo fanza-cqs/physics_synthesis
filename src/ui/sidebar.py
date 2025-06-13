@@ -422,7 +422,7 @@ class Sidebar:
     def _create_new_session(self):
         """Create new session with enhanced UX"""
         try:
-            new_session = self.integration.handle_new_session()
+            new_session = self.integration.create_new_session()
             
             if new_session:
                 # Clear any open management dialogs

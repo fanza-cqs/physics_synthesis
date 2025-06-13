@@ -7,7 +7,7 @@ High-level interface for managing conversation sessions
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
-import logging
+from enum import Enum
 
 from .session import Session, SessionDocument
 from .storage import SessionStorage
@@ -15,6 +15,13 @@ from ..utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+class SessionOperationContext(Enum):
+    """Context for session operations to control when sessions should be modified"""
+    CONVERSATION = "conversation"  # User is actively chatting
+    UI_INTERACTION = "ui_interaction"  # User UI actions during chat
+    KB_MANAGEMENT = "kb_management"  # Knowledge base operations
+    APP_INITIALIZATION = "app_init"  # App startup
+    BACKGROUND_TASK = "background"  # Background processing
 
 class SessionManager:
     """
@@ -32,6 +39,7 @@ class SessionManager:
         self.project_root = Path(project_root)
         self.storage = SessionStorage(project_root)
         self._current_session: Optional[Session] = None
+        self._operation_context = SessionOperationContext.CONVERSATION
         
         logger.info(f"SessionManager initialized with project root: {project_root}")
     
@@ -40,21 +48,58 @@ class SessionManager:
         """Get the currently active session"""
         return self._current_session
     
+    def set_operation_context(self, context: SessionOperationContext):
+        """Set the current operation context"""
+        self._operation_context = context
+    
+    def should_modify_session(self, operation: str) -> bool:
+        """Determine if current operation should modify sessions"""
+        
+        # Never modify sessions during KB management or app init
+        if self._operation_context in [
+            SessionOperationContext.KB_MANAGEMENT,
+            SessionOperationContext.APP_INITIALIZATION
+        ]:
+            return False
+        
+        # Only modify during conversation-related operations
+        conversation_operations = [
+            "add_message", "upload_document", "select_kb_for_chat",
+            "update_settings", "create_new_session"
+        ]
+        
+        return (
+            self._operation_context == SessionOperationContext.CONVERSATION and
+            operation in conversation_operations
+        )
+    
     def create_session(self, 
                       name: Optional[str] = None,
                       knowledge_base_name: Optional[str] = None,
-                      auto_activate: bool = True) -> Session:
+                      auto_activate: bool = True,
+                      trigger: str = "user_initiated") -> Optional[Session]:
         """
-        Create a new session
+        Create a new session with context awareness
         
         Args:
             name: Session name (auto-generated if None)
             knowledge_base_name: Knowledge base to attach (optional)
             auto_activate: Whether to make this the current session
+            trigger: What triggered session creation
             
         Returns:
-            Created session
+            Created session or None if creation not allowed
         """
+        # Check if session creation is allowed
+        valid_triggers = ["user_initiated", "first_message", "new_conversation"]
+        if trigger not in valid_triggers:
+            logger.warning(f"Invalid session creation trigger: {trigger}")
+            return None
+        
+        if not self.should_modify_session("create_new_session"):
+            logger.debug(f"Skipping session creation in context '{self._operation_context}'")
+            return None
+        
         session = Session(
             name=name,
             knowledge_base_name=knowledge_base_name
@@ -70,7 +115,8 @@ class SessionManager:
             
             return session
         else:
-            raise RuntimeError(f"Failed to save new session: {session.id}")
+            logger.error(f"Failed to save new session: {session.id}")
+            return None
     
     def load_session(self, session_id: str, auto_activate: bool = True) -> Optional[Session]:
         """
@@ -97,13 +143,20 @@ class SessionManager:
             logger.warning(f"Session not found: {session_id}")
             return None
     
-    def save_current_session(self) -> bool:
+    def save_current_session(self, operation: str = "manual_save") -> bool:
         """
-        Save the current session to disk
+        Save the current session to disk with context awareness
         
+        Args:
+            operation: What operation triggered the save
+            
         Returns:
             True if saved successfully, False otherwise
         """
+        if not self.should_modify_session(operation):
+            logger.debug(f"Skipping session save for operation '{operation}' in context '{self._operation_context}'")
+            return True
+        
         if not self._current_session:
             logger.warning("No current session to save")
             return False
@@ -175,7 +228,7 @@ class SessionManager:
             # If it's the current session, update directly
             if self._current_session and self._current_session.id == session_id:
                 self._current_session.set_name(new_name)
-                return self.save_current_session()
+                return self.save_current_session("rename_session")
             
             # Otherwise, load, rename, and save
             session = self.storage.load_session(session_id)
@@ -213,7 +266,7 @@ class SessionManager:
             self._current_session.add_message(role, content, sources)
             
             # Auto-save after each message
-            success = self.save_current_session()
+            success = self.save_current_session("add_message")
             if success:
                 logger.debug(f"Added {role} message to session {self._current_session.id}")
             
@@ -250,7 +303,7 @@ class SessionManager:
             doc = self._current_session.add_document(stored_path, original_name)
             
             # Save session
-            if self.save_current_session():
+            if self.save_current_session("upload_document"):
                 logger.info(f"Added document '{original_name}' to session {self._current_session.id}")
                 return doc
             else:
@@ -280,7 +333,7 @@ class SessionManager:
             
             if success:
                 # Save session
-                if self.save_current_session():
+                if self.save_current_session("remove_document"):
                     logger.info(f"Removed document '{filename}' from session {self._current_session.id}")
                     return True
                 else:
@@ -313,7 +366,7 @@ class SessionManager:
             self._current_session.set_knowledge_base(kb_name)
             
             # Save session
-            if self.save_current_session():
+            if self.save_current_session("select_kb_for_chat"):
                 logger.info(f"Changed KB for session {self._current_session.id}: '{old_kb}' -> '{kb_name}'")
                 return True
             else:
@@ -342,7 +395,7 @@ class SessionManager:
             self._current_session.update_settings(**kwargs)
             
             # Save session
-            if self.save_current_session():
+            if self.save_current_session("update_settings"):
                 logger.debug(f"Updated settings for session {self._current_session.id}: {kwargs}")
                 return True
             else:
@@ -353,12 +406,12 @@ class SessionManager:
             logger.error(f"Failed to update settings for current session: {e}")
             return False
     
-    def get_or_create_default_session(self) -> Session:
+    def get_or_create_default_session(self) -> Optional[Session]:
         """
         Get current session or create a default one if none exists
         
         Returns:
-            Current or newly created session
+            Current or newly created session, or None if creation not allowed
         """
         if self._current_session:
             return self._current_session
@@ -374,10 +427,15 @@ class SessionManager:
                 logger.info(f"Loaded most recent session: {session.id}")
                 return session
         
-        # Create new default session
-        session = self.create_session(name="New Session", auto_activate=True)
-        logger.info(f"Created default session: {session.id}")
-        return session
+        # Create new default session only if in conversation context
+        if self._operation_context == SessionOperationContext.CONVERSATION:
+            session = self.create_session(name="New Session", auto_activate=True)
+            if session:
+                logger.info(f"Created default session: {session.id}")
+            return session
+        else:
+            logger.debug("Cannot create default session outside conversation context")
+            return None
     
     def switch_to_session(self, session_id: str) -> bool:
         """
@@ -391,7 +449,7 @@ class SessionManager:
         """
         # Save current session first
         if self._current_session:
-            self.save_current_session()
+            self.save_current_session("session_switch")
         
         # Load new session
         session = self.load_session(session_id, auto_activate=True)
@@ -561,4 +619,4 @@ class SessionManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - save current session"""
         if self._current_session:
-            self.save_current_session()
+            self.save_current_session("context_exit")

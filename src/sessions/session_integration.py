@@ -1,7 +1,7 @@
 # src/sessions/session_integration.py
 """
 Session Integration module for Physics Literature Synthesis Pipeline
-Handles integration between session system and UI components
+Handles integration between session system and UI components with context awareness
 """
 
 import streamlit as st
@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 import logging
 
-from .session_manager import SessionManager
+from .session_manager import SessionManager, SessionOperationContext
 from .session import Session
 from ..utils.logging_config import get_logger
 
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 class SessionIntegration:
     """
     Handles integration between session system and Streamlit UI
-    Provides high-level session management for the UI
+    Provides high-level session management for the UI with context awareness
     """
     
     def __init__(self, session_manager: SessionManager):
@@ -31,37 +31,58 @@ class SessionIntegration:
         """
         self.session_manager = session_manager
     
-    def ensure_current_session(self) -> Session:
+    def with_context(self, context: SessionOperationContext):
+        """Context manager for session operations"""
+        class ContextManager:
+            def __init__(self, sm, ctx):
+                self.session_manager = sm
+                self.context = ctx
+                self.previous_context = None
+            
+            def __enter__(self):
+                self.previous_context = self.session_manager._operation_context
+                self.session_manager.set_operation_context(self.context)
+                return self
+            
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                self.session_manager.set_operation_context(self.previous_context)
+        
+        return ContextManager(self.session_manager, context)
+    
+    def ensure_current_session(self) -> Optional[Session]:
         """
-        Ensure there's always a current session
+        Ensure there's always a current session for conversation
         Creates default session if none exists
         
         Returns:
-            Current session
+            Current session or None if not in conversation context
         """
-        current_session = self.session_manager.current_session
-        
-        if not current_session:
-            # Check if we have any existing sessions
-            sessions = self.session_manager.list_sessions()
+        with self.with_context(SessionOperationContext.CONVERSATION):
+            current_session = self.session_manager.current_session
             
-            if sessions:
-                # Load the most recent session
-                most_recent = sessions[0]  # Already sorted by last_active
-                session = self.session_manager.load_session(most_recent['id'], auto_activate=True)
+            if not current_session:
+                # Check if we have any existing sessions
+                sessions = self.session_manager.list_sessions()
+                
+                if sessions:
+                    # Load the most recent session
+                    most_recent = sessions[0]  # Already sorted by last_active
+                    session = self.session_manager.load_session(most_recent['id'], auto_activate=True)
+                    if session:
+                        logger.info(f"Loaded most recent session: {session.id}")
+                        return session
+                
+                # Create new default session
+                session = self.session_manager.create_session(
+                    name="New Session",
+                    auto_activate=True,
+                    trigger="user_initiated"
+                )
                 if session:
-                    logger.info(f"Loaded most recent session: {session.id}")
-                    return session
+                    logger.info(f"Created new default session: {session.id}")
+                return session
             
-            # Create new default session
-            session = self.session_manager.create_session(
-                name="New Session",
-                auto_activate=True
-            )
-            logger.info(f"Created new default session: {session.id}")
-            return session
-        
-        return current_session
+            return current_session
     
     def sync_session_to_streamlit(self, session: Session):
         """
@@ -70,133 +91,143 @@ class SessionIntegration:
         Args:
             session: Session to sync
         """
+        if not session:
+            return
+        
         # Update chat settings in Streamlit state
         st.session_state.chat_temperature = session.settings.temperature
-        st.session_state.chat_max_sources = session.settings.max_sources
+        st.session_state.max_sources = session.settings.max_sources
+        st.session_state.response_style = session.settings.response_style
         
-        # Store session reference
+        # Update session context
         st.session_state.current_session_id = session.id
         st.session_state.current_session_name = session.name
-        st.session_state.current_kb_name = session.knowledge_base_name
+        st.session_state.current_kb = session.knowledge_base_name
         
         logger.debug(f"Synced session {session.id} to Streamlit state")
     
-    def sync_streamlit_to_session(self, session: Session):
+    def create_new_session(self, name: Optional[str] = None, kb_name: Optional[str] = None) -> Optional[Session]:
         """
-        Sync Streamlit session state changes back to session
+        Create a new session for conversation
         
         Args:
-            session: Session to update
-        """
-        # Get current values from Streamlit
-        temperature = st.session_state.get('chat_temperature', 0.3)
-        max_sources = st.session_state.get('chat_max_sources', 8)
-        
-        # Update session if values changed
-        if (temperature != session.settings.temperature or 
-            max_sources != session.settings.max_sources):
-            
-            self.session_manager.update_current_session_settings(
-                temperature=temperature,
-                max_sources=max_sources
-            )
-            
-            logger.debug(f"Updated session {session.id} settings from Streamlit state")
-    
-    def handle_session_switch(self, new_session_id: str) -> bool:
-        """
-        Handle switching to a different session
-        
-        Args:
-            new_session_id: ID of session to switch to
+            name: Session name (auto-generated if None)
+            kb_name: Knowledge base to attach (optional)
             
         Returns:
-            True if switch was successful, False otherwise
+            Created session or None if creation not allowed
         """
-        try:
-            # Save current session first
-            if self.session_manager.current_session:
-                self.sync_streamlit_to_session(self.session_manager.current_session)
-                self.session_manager.save_current_session()
-            
-            # Switch to new session
-            if self.session_manager.switch_to_session(new_session_id):
-                new_session = self.session_manager.current_session
-                self.sync_session_to_streamlit(new_session)
-                
-                logger.info(f"Successfully switched to session: {new_session_id}")
-                return True
-            else:
-                logger.error(f"Failed to switch to session: {new_session_id}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error switching to session {new_session_id}: {e}")
-            return False
-    
-    def handle_new_session(self, kb_name: Optional[str] = None) -> Optional[Session]:
-        """
-        Handle creation of a new session
-        
-        Args:
-            kb_name: Knowledge base to assign to new session
-            
-        Returns:
-            New session if created successfully, None otherwise
-        """
-        try:
-            # Save current session first
-            if self.session_manager.current_session:
-                self.sync_streamlit_to_session(self.session_manager.current_session)
-                self.session_manager.save_current_session()
-            
-            # Create new session
-            new_session = self.session_manager.create_session(
-                name="New Session",
+        with self.with_context(SessionOperationContext.CONVERSATION):
+            session = self.session_manager.create_session(
+                name=name,
                 knowledge_base_name=kb_name,
-                auto_activate=True
+                auto_activate=True,
+                trigger="user_initiated"
             )
             
-            # Sync to Streamlit
-            self.sync_session_to_streamlit(new_session)
+            if session:
+                self.sync_session_to_streamlit(session)
+                logger.info(f"Created new session via integration: {session.id}")
             
-            logger.info(f"Created new session: {new_session.id}")
-            return new_session
-            
-        except Exception as e:
-            logger.error(f"Error creating new session: {e}")
-            return None
+            return session
     
-    def handle_kb_change(self, new_kb_name: Optional[str]) -> bool:
+    def switch_to_session(self, session_id: str) -> bool:
         """
-        Handle knowledge base change for current session
+        Switch to a different session
         
         Args:
-            new_kb_name: New knowledge base name (None for pure chat)
+            session_id: ID of session to switch to
             
         Returns:
-            True if change was successful, False otherwise
+            True if switched successfully, False otherwise
         """
-        try:
-            current_session = self.ensure_current_session()
+        with self.with_context(SessionOperationContext.CONVERSATION):
+            success = self.session_manager.switch_to_session(session_id)
             
-            if self.session_manager.set_knowledge_base_for_current(new_kb_name):
-                # Update Streamlit state
-                st.session_state.current_kb_name = new_kb_name
-                
-                logger.info(f"Changed KB for session {current_session.id}: {new_kb_name}")
-                return True
-            else:
-                logger.error(f"Failed to change KB for session {current_session.id}")
+            if success:
+                current_session = self.session_manager.current_session
+                if current_session:
+                    self.sync_session_to_streamlit(current_session)
+                    logger.info(f"Switched to session {session_id} via integration")
+            
+            return success
+    
+    def handle_user_message(self, content: str) -> bool:
+        """
+        Handle user message in conversation context
+        
+        Args:
+            content: Message content
+            
+        Returns:
+            True if message added successfully, False otherwise
+        """
+        with self.with_context(SessionOperationContext.CONVERSATION):
+            # Ensure session exists
+            session = self.ensure_current_session()
+            if not session:
+                logger.error("Cannot add message - no session available")
                 return False
-                
-        except Exception as e:
-            logger.error(f"Error changing KB: {e}")
-            return False
+            
+            # Add message
+            success = self.session_manager.add_message_to_current("user", content)
+            
+            if success:
+                self.sync_session_to_streamlit(session)
+                logger.debug(f"Added user message to session {session.id}")
+            
+            return success
+    
+    def handle_assistant_response(self, content: str, sources: List[str] = None) -> bool:
+        """
+        Handle assistant response in conversation context
+        
+        Args:
+            content: Response content
+            sources: Source references (optional)
+            
+        Returns:
+            True if response added successfully, False otherwise
+        """
+        with self.with_context(SessionOperationContext.CONVERSATION):
+            session = self.session_manager.current_session
+            if not session:
+                logger.error("Cannot add response - no current session")
+                return False
+            
+            # Add response
+            success = self.session_manager.add_message_to_current("assistant", content, sources)
+            
+            if success:
+                self.sync_session_to_streamlit(session)
+                logger.debug(f"Added assistant response to session {session.id}")
+            
+            return success
+    
+    def handle_kb_selection(self, kb_name: Optional[str]) -> bool:
+        """
+        Handle knowledge base selection during conversation
+        
+        Args:
+            kb_name: Name of knowledge base (None to remove)
+            
+        Returns:
+            True if KB set successfully, False otherwise
+        """
+        with self.with_context(SessionOperationContext.UI_INTERACTION):
+            success = self.session_manager.set_knowledge_base_for_current(kb_name)
+            
+            if success:
+                current_session = self.session_manager.current_session
+                if current_session:
+                    self.sync_session_to_streamlit(current_session)
+                    logger.info(f"Set KB '{kb_name}' for session {current_session.id}")
+            
+            return success
     
     def handle_document_upload(self, uploaded_files) -> List[str]:
         """
-        Handle document upload for current session
+        Handle document upload during conversation
         
         Args:
             uploaded_files: Streamlit uploaded files
@@ -204,95 +235,65 @@ class SessionIntegration:
         Returns:
             List of successfully uploaded document names
         """
-        current_session = self.ensure_current_session()
-        uploaded_names = []
-        
-        for uploaded_file in uploaded_files:
-            try:
-                # Save uploaded file temporarily
-                temp_file = Path("/tmp") / uploaded_file.name
-                with open(temp_file, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                # Add to session
-                doc = self.session_manager.add_document_to_current(temp_file, uploaded_file.name)
-                
-                if doc:
-                    uploaded_names.append(uploaded_file.name)
-                    logger.info(f"Added document to session {current_session.id}: {uploaded_file.name}")
-                
-                # Clean up temp file
-                if temp_file.exists():
-                    temp_file.unlink()
+        with self.with_context(SessionOperationContext.CONVERSATION):
+            # Ensure session exists
+            session = self.ensure_current_session()
+            if not session:
+                logger.error("Cannot upload documents - no session available")
+                return []
+            
+            uploaded_names = []
+            
+            for uploaded_file in uploaded_files:
+                try:
+                    # Create temporary file
+                    temp_dir = Path("temp_uploads")
+                    temp_dir.mkdir(exist_ok=True)
                     
-            except Exception as e:
-                logger.error(f"Document upload failed for {uploaded_file.name}: {e}")
-        
-        return uploaded_names
+                    temp_path = temp_dir / uploaded_file.name
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Add to session
+                    doc = self.session_manager.add_document_to_current(temp_path, uploaded_file.name)
+                    
+                    if doc:
+                        uploaded_names.append(uploaded_file.name)
+                        logger.info(f"Uploaded document '{uploaded_file.name}' to session {session.id}")
+                    
+                    # Clean up temp file
+                    temp_path.unlink(missing_ok=True)
+                    
+                except Exception as e:
+                    logger.error(f"Failed to upload document '{uploaded_file.name}': {e}")
+            
+            if uploaded_names:
+                self.sync_session_to_streamlit(session)
+            
+            return uploaded_names
     
-    def handle_message_add(self, role: str, content: str, sources: List[str] = None) -> bool:
+    def handle_session_settings_update(self, **kwargs) -> bool:
         """
-        Handle adding a message to current session
-        
-        Args:
-            role: Message role ("user" or "assistant")
-            content: Message content
-            sources: List of sources (for assistant messages)
-            
-        Returns:
-            True if message was added successfully, False otherwise
-        """
-        try:
-            current_session = self.ensure_current_session()
-            
-            # Sync any Streamlit state changes first
-            self.sync_streamlit_to_session(current_session)
-            
-            # Add message
-            success = self.session_manager.add_message_to_current(role, content, sources)
-            
-            if success:
-                logger.debug(f"Added {role} message to session {current_session.id}")
-            else:
-                logger.error(f"Failed to add {role} message to session {current_session.id}")
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"Error adding message: {e}")
-            return False
-    
-    def handle_session_rename(self, session_id: str, new_name: str) -> bool:
-        """
-        Handle session rename
+        Handle session settings update
         
         Args:
-            session_id: ID of session to rename
-            new_name: New name for session
+            **kwargs: Settings to update
             
         Returns:
-            True if rename was successful, False otherwise
+            True if updated successfully, False otherwise
         """
-        try:
-            success = self.session_manager.rename_session(session_id, new_name)
+        with self.with_context(SessionOperationContext.UI_INTERACTION):
+            success = self.session_manager.update_current_session_settings(**kwargs)
             
             if success:
-                # Update Streamlit state if it's the current session
-                if (self.session_manager.current_session and 
-                    self.session_manager.current_session.id == session_id):
-                    st.session_state.current_session_name = new_name
-                
-                logger.info(f"Renamed session {session_id} to '{new_name}'")
-            else:
-                logger.error(f"Failed to rename session {session_id}")
+                current_session = self.session_manager.current_session
+                if current_session:
+                    self.sync_session_to_streamlit(current_session)
+                    logger.debug(f"Updated settings for session {current_session.id}: {kwargs}")
             
             return success
-            
-        except Exception as e:
-            logger.error(f"Error renaming session {session_id}: {e}")
-            return False
     
-    def handle_session_delete(self, session_id: str) -> bool:
+    def handle_session_deletion(self, session_id: str) -> bool:
         """
         Handle session deletion
         
@@ -300,32 +301,21 @@ class SessionIntegration:
             session_id: ID of session to delete
             
         Returns:
-            True if deletion was successful, False otherwise
+            True if deleted successfully, False otherwise
         """
-        try:
-            # Check if we're deleting the current session
-            is_current = (self.session_manager.current_session and 
-                         self.session_manager.current_session.id == session_id)
-            
-            # Delete session
+        with self.with_context(SessionOperationContext.CONVERSATION):
             success = self.session_manager.delete_session(session_id)
             
             if success:
-                # If we deleted the current session, create a new one
-                if is_current:
-                    new_session = self.handle_new_session()
-                    if new_session:
-                        logger.info(f"Created new session after deleting current session")
+                logger.info(f"Deleted session {session_id} via integration")
                 
-                logger.info(f"Deleted session {session_id}")
-            else:
-                logger.error(f"Failed to delete session {session_id}")
+                # If we deleted the current session, ensure we have a new one
+                if not self.session_manager.current_session:
+                    new_session = self.ensure_current_session()
+                    if new_session:
+                        self.sync_session_to_streamlit(new_session)
             
             return success
-            
-        except Exception as e:
-            logger.error(f"Error deleting session {session_id}: {e}")
-            return False
     
     def handle_clear_conversation(self) -> bool:
         """
@@ -334,7 +324,7 @@ class SessionIntegration:
         Returns:
             True if conversation was cleared successfully, False otherwise
         """
-        try:
+        with self.with_context(SessionOperationContext.CONVERSATION):
             current_session = self.session_manager.current_session
             if not current_session:
                 return False
@@ -343,18 +333,13 @@ class SessionIntegration:
             current_session.messages = []
             
             # Save session
-            success = self.session_manager.save_current_session()
+            success = self.session_manager.save_current_session("clear_conversation")
             
             if success:
+                self.sync_session_to_streamlit(current_session)
                 logger.info(f"Cleared conversation for session {current_session.id}")
-            else:
-                logger.error(f"Failed to clear conversation for session {current_session.id}")
             
             return success
-            
-        except Exception as e:
-            logger.error(f"Error clearing conversation: {e}")
-            return False
     
     def get_session_list_for_ui(self) -> List[Dict]:
         """
@@ -390,6 +375,14 @@ class SessionIntegration:
             logger.error(f"Error getting session list: {e}")
             return []
     
+    def handle_kb_management_operations(self):
+        """Set context for KB management operations to prevent session interference"""
+        return self.with_context(SessionOperationContext.KB_MANAGEMENT)
+    
+    def handle_app_initialization(self):
+        """Set context for app initialization to prevent session interference"""
+        return self.with_context(SessionOperationContext.APP_INITIALIZATION)
+    
     def validate_session_integrity(self) -> Dict[str, Any]:
         """
         Validate integrity of all sessions
@@ -420,33 +413,41 @@ class SessionIntegration:
             return 0
 
 
-def get_session_integration() -> SessionIntegration:
+def get_session_integration() -> Optional[SessionIntegration]:
     """
     Get or create session integration instance
     
     Returns:
-        SessionIntegration instance
+        SessionIntegration instance or None if not available
     """
     if 'session_integration' not in st.session_state:
         session_manager = st.session_state.get('session_manager')
         if not session_manager:
-            raise RuntimeError("Session manager not initialized")
+            logger.warning("Session manager not available for integration")
+            return None
         
         st.session_state.session_integration = SessionIntegration(session_manager)
     
     return st.session_state.session_integration
 
 
-def init_session_integration():
-    """Initialize session integration for the app"""
+def init_session_integration() -> bool:
+    """
+    Initialize session integration for the app
+    
+    Returns:
+        True if initialized successfully, False otherwise
+    """
     try:
         integration = get_session_integration()
+        if not integration:
+            logger.error("Failed to get session integration")
+            return False
         
-        # Ensure we have a current session
-        current_session = integration.ensure_current_session()
-        
-        # Sync to Streamlit state
-        integration.sync_session_to_streamlit(current_session)
+        # Set app initialization context
+        with integration.handle_app_initialization():
+            # Ensure we have a current session for conversation
+            pass  # Don't create session during app init
         
         logger.info("Session integration initialized successfully")
         return True

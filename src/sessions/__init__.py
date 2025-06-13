@@ -19,7 +19,7 @@ Main classes:
 """
 
 from .session import Session, SessionMessage, SessionDocument, SessionSettings
-from .session_manager import SessionManager
+from .session_manager import SessionManager, SessionOperationContext
 from .enhanced_session_manager import EnhancedSessionManager
 from .storage import SessionStorage
 from .session_integration import SessionIntegration, get_session_integration, init_session_integration
@@ -34,6 +34,7 @@ __all__ = [
     # Management classes
     'SessionManager',
     'EnhancedSessionManager',
+    'SessionOperationContext',
     'SessionStorage',
     
     # Integration layer
