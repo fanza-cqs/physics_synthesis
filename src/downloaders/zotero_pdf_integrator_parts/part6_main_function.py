@@ -30,18 +30,10 @@ def integrate_pdfs_with_zotero_fixed(download_results: List[Dict],
     mode_map = {
         'download_only': IntegrationMode.DOWNLOAD_ONLY,
         'attach': IntegrationMode.ATTACH_TO_EXISTING,
-        # 'upload_replace': IntegrationMode.UPLOAD_AND_REPLACE,  # DISABLED
     }
     
     if mode not in mode_map:
-        available_modes = list(mode_map.keys())
-        if mode == 'upload_replace':
-            raise ValueError(
-                f"Mode 'upload_replace' has been disabled due to API limitations. "
-                f"Available modes: {available_modes}. Use 'attach' for reliable integration."
-            )
-        else:
-            raise ValueError(f"Invalid mode: {mode}. Must be one of {available_modes}")
+        raise ValueError(f"Invalid mode: {mode}. Must be one of {list(mode_map.keys())}")
     
     # Create configuration
     config = IntegrationConfig(

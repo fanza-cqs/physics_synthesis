@@ -10,10 +10,8 @@ Location: config/settings.py
 
 import os
 import sys
-import time
-import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
@@ -63,7 +61,6 @@ class PipelineConfig:
         self.default_kb_name = os.getenv("DEFAULT_KB_NAME", "physics_main")
         
         # Cache and output
-        self.cache_file = self.project_root / "physics_knowledge_base.pkl"  # Legacy
         self.reports_folder = self.project_root / "reports"
         
         # API Configuration - Now loaded from .env file
@@ -219,51 +216,6 @@ class PipelineConfig:
         """
         return self.cache_file
     
-    def migrate_legacy_cache(self, target_kb_name: str = None) -> bool:
-        """
-        Migrate legacy cache file to new knowledge base system.
-        
-        Args:
-            target_kb_name: Name for the migrated knowledge base
-        
-        Returns:
-            True if migration was successful
-        """
-        if not self.cache_file.exists():
-            return False
-        
-        kb_name = target_kb_name or self.default_kb_name
-        
-        try:
-            # Import here to avoid circular imports
-            from src.core import KnowledgeBase
-            
-            # Create new knowledge base
-            new_kb = KnowledgeBase(
-                name=kb_name,
-                base_storage_dir=self.knowledge_bases_folder,
-                embedding_model=self.embedding_model,
-                chunk_size=self.chunk_size,
-                chunk_overlap=self.chunk_overlap
-            )
-            
-            # Load from legacy file
-            success = new_kb.embeddings_manager.load_from_file(self.cache_file)
-            
-            if success:
-                # Save in new format
-                new_kb.save_to_storage()
-                
-                # Backup and remove legacy file
-                backup_file = self.cache_file.with_suffix('.pkl.backup')
-                self.cache_file.rename(backup_file)
-                
-                return True
-            else:
-                return False
-                
-        except Exception:
-            return False
     
     # === EXISTING METHODS (ENHANCED) ===
     
@@ -496,7 +448,6 @@ ZOTERO_OVERWRITE_FILES=false
     def get_literature_sources(self) -> Dict[str, str]:
         """Get available literature source types and their descriptions."""
         return {
-            'bibtex': 'Legacy BibTeX files (deprecated)',
             'arxiv': 'ArXiv downloads via API',
             'zotero': 'Zotero library synchronization (recommended)',
             'manual': 'Manually added references'

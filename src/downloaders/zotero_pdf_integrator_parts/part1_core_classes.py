@@ -48,34 +48,3 @@ class IntegrationResult:
         if self.warnings is None:
             self.warnings = []
 
-# Test function for this part
-def test_part1():
-    """Test that Part 1 works correctly."""
-    print("🧪 Testing Part 1: Core Classes...")
-    
-    # Test IntegrationMode
-    assert IntegrationMode.DOWNLOAD_ONLY.value == "download_only"
-    assert IntegrationMode.ATTACH_TO_EXISTING.value == "attach"
-    assert IntegrationMode.UPLOAD_AND_REPLACE.value == "upload_replace"
-    
-    # Test IntegrationConfig
-    config = IntegrationConfig(mode=IntegrationMode.DOWNLOAD_ONLY)
-    assert config.mode == IntegrationMode.DOWNLOAD_ONLY
-    assert config.replace_original == True
-    
-    # Test IntegrationResult
-    result = IntegrationResult(
-        doi="test.doi",
-        original_item_key="TEST123",
-        pdf_path="/test/path.pdf",
-        mode=IntegrationMode.DOWNLOAD_ONLY,
-        success=True
-    )
-    assert result.warnings == []
-    assert result.success == True
-    
-    print("✅ Part 1 test passed!")
-    return True
-
-if __name__ == "__main__":
-    test_part1()

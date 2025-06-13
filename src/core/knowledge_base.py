@@ -424,15 +424,15 @@ class KnowledgeBase:
             raise
     
     # Legacy methods for backward compatibility
-    def save_to_file(self, filepath: Path) -> None:
-        """Legacy method - redirects to save_to_storage()."""
-        logger.warning("save_to_file() is deprecated, use save_to_storage() instead")
-        self.save_to_storage()
+    #def save_to_file(self, filepath: Path) -> None:
+    #    """Legacy method - redirects to save_to_storage()."""
+    #    logger.warning("save_to_file() is deprecated, use save_to_storage() instead")
+    #    self.save_to_storage()
     
-    def load_from_file(self, filepath: Path) -> bool:
-        """Legacy method - redirects to load_from_storage()."""
-        logger.warning("load_from_file() is deprecated, use load_from_storage() instead")
-        return self.load_from_storage()
+    #def load_from_file(self, filepath: Path) -> bool:
+    #    """Legacy method - redirects to load_from_storage()."""
+    #    logger.warning("load_from_file() is deprecated, use load_from_storage() instead")
+    #    return self.load_from_storage()
     
     # All other existing methods remain the same...
     def add_manual_reference(self, file_path: Path) -> bool:
