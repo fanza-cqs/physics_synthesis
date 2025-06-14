@@ -57,6 +57,11 @@ class SessionIntegration:
         Returns:
             Current session or None if not in conversation context
         """
+        # Don't create sessions during app initialization
+        if self.session_manager._operation_context == SessionOperationContext.APP_INITIALIZATION:
+            logger.debug("Skipping session creation during app initialization")
+            return None
+        
         with self.with_context(SessionOperationContext.CONVERSATION):
             current_session = self.session_manager.current_session
             
@@ -72,15 +77,17 @@ class SessionIntegration:
                         logger.info(f"Loaded most recent session: {session.id}")
                         return session
                 
-                # Create new default session
-                session = self.session_manager.create_session(
-                    name="New Session",
-                    auto_activate=True,
-                    trigger="user_initiated"
-                )
-                if session:
-                    logger.info(f"Created new default session: {session.id}")
-                return session
+                # Only create new session if explicitly in conversation context
+                # NOT during app initialization or other non-conversation contexts
+                if self.session_manager._operation_context == SessionOperationContext.CONVERSATION:
+                    session = self.session_manager.create_session(
+                        name="New Session",
+                        auto_activate=True,
+                        trigger="user_initiated"
+                    )
+                    if session:
+                        logger.info(f"Created new default session: {session.id}")
+                    return session
             
             return current_session
     
@@ -411,6 +418,69 @@ class SessionIntegration:
         except Exception as e:
             logger.error(f"Error cleaning up old sessions: {e}")
             return 0
+        
+
+    def prepare_new_conversation(self) -> bool:
+        """
+        Prepare UI for a new conversation (ChatGPT/Claude style)
+        Clears current session without creating a new one until first message is sent
+        
+        Returns:
+            True if preparation successful
+        """
+        try:
+            # Clear current session without creating a new one
+            self.session_manager._current_session = None
+            
+            # Set UI state for pending new conversation
+            st.session_state.current_session_id = None
+            st.session_state.current_session_name = "New Chat"
+            st.session_state.current_kb = None
+            st.session_state.pending_new_session = True
+            
+            # Clear any existing chat input
+            if 'chat_input' in st.session_state:
+                st.session_state.chat_input = ""
+            
+            logger.info("Prepared UI for new conversation (session will be created on first message)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error preparing new conversation: {e}")
+            return False
+
+    def create_session_on_first_message(self, first_message: str) -> Optional[Session]:
+        """
+        Create a new session when the user sends their first message
+        This implements ChatGPT/Claude-style session creation
+        
+        Args:
+            first_message: The first message content (used for auto-naming)
+            
+        Returns:
+            Created session or None if creation failed
+        """
+        try:
+            with self.with_context(SessionOperationContext.CONVERSATION):
+                # Create session with auto-naming based on first message
+                session = self.session_manager.create_session(
+                    name="New Session",  # Will be auto-renamed after first exchange
+                    auto_activate=True,
+                    trigger="first_message"
+                )
+                
+                if session:
+                    self.sync_session_to_streamlit(session)
+                    logger.info(f"Created session on first message: {session.id}")
+                    
+                    # Clear the pending flag
+                    st.session_state.pending_new_session = False
+                    
+                return session
+                
+        except Exception as e:
+            logger.error(f"Error creating session on first message: {e}")
+            return None
 
 
 def get_session_integration() -> Optional[SessionIntegration]:

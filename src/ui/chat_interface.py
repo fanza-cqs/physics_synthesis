@@ -57,7 +57,15 @@ class ChatInterface:
             return self.session_manager.get_or_create_default_session()
     
     def _render_header(self, session):
-        """Render simple header with context info"""
+        """Render header with pending conversation state"""
+    
+        # Check if we're in pending new conversation state
+        if st.session_state.get('pending_new_session', False):
+            st.markdown("### 💬 New Chat")
+            st.info("💡 Start typing your first message to begin the conversation...")
+            return
+        
+
         if session.name != "New Session":
             st.markdown(f"### 💬 {session.name}")
         else:
@@ -82,6 +90,24 @@ class ChatInterface:
     
     def _render_conversation(self, session):
         """Render conversation messages"""
+        
+        # If we're in pending new conversation state, show a welcome message
+        if st.session_state.get('pending_new_session', False):
+            st.markdown("""
+            <div style="text-align: center; padding: 2rem; color: #6b7280;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>
+                <h3 style="color: #374151; margin-bottom: 0.5rem;">Ready to help with your research!</h3>
+                <p>Ask me anything about physics, literature, or start by uploading documents.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            return
+        
+        # Handle case where session is None or has no messages
+        if not session or not session.messages:
+            st.markdown("*No messages yet. Start a conversation below!*")
+            return
+        
+        # Render existing conversation messages
         for i, message in enumerate(session.messages):
             if message.role == "system":
                 continue  # Skip system messages in main display
@@ -299,10 +325,25 @@ class ChatInterface:
             ]
     
     def _process_user_message(self, message: str):
-        """Process user message with integrated session handling"""
+        """Process user message with ChatGPT/Claude-style session creation"""
+        
+        # Check if we need to create a session for the first message
+        if st.session_state.get('pending_new_session', False):
+            if self.integration:
+                # Create session only when first message is sent
+                new_session = self.integration.create_session_on_first_message(message)
+                if not new_session:
+                    st.error("Failed to create new conversation")
+                    return
+                
+                logger.info(f"Created conversation on first message: {new_session.id}")
+            else:
+                st.error("Session integration not available")
+                return
+
         # Add user message
         if self.integration:
-            if not self.integration.handle_message_add("user", message):
+            if not self.integration.handle_user_message(message):
                 st.error("Failed to save message")
                 return
         else:
@@ -331,7 +372,7 @@ class ChatInterface:
                     
                     # Add assistant response
                     if self.integration:
-                        self.integration.handle_message_add("assistant", response_content, sources)
+                        self.integration.handle_assistant_response(response_content, sources)
                     else:
                         self.session_manager.add_message_to_current("assistant", response_content, sources)
                     
@@ -340,7 +381,7 @@ class ChatInterface:
                     st.error(error_msg)
                     
                     if self.integration:
-                        self.integration.handle_message_add("assistant", error_msg)
+                        self.integration.handle_assistant_response(error_msg)
                     else:
                         self.session_manager.add_message_to_current("assistant", error_msg)
         

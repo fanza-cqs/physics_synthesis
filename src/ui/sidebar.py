@@ -181,6 +181,13 @@ class Sidebar:
 
     def _render_enhanced_sessions_list(self):
         """Render enhanced sessions list with clean UI and proper dividers"""
+
+        # Don't show session list if we're in pending new conversation state
+        if st.session_state.get('pending_new_session', False):
+            st.markdown("*Start typing to create your conversation...*")
+            st.markdown("✨ Your new chat will appear here after your first message")
+            return
+    
         # Get current session ID first
         current_session_id = None
         if self.session_manager.current_session:
@@ -420,24 +427,19 @@ class Sidebar:
         return result
     
     def _create_new_session(self):
-        """Create new session with enhanced UX"""
+        """Prepare for new conversation (ChatGPT/Claude style)"""
         try:
-            new_session = self.integration.create_new_session()
-            
-            if new_session:
-                # Clear any open management dialogs
-                st.session_state.show_kb_management = False
-                st.session_state.show_zotero_management = False
-                st.session_state.show_settings = False
-                
-                logger.info(f"Created new session from sidebar: {new_session.id}")
+            if self.integration.prepare_new_conversation():
+                # Navigate to chat page after preparing new conversation
+                st.session_state.current_page = 'chat'
+                logger.info("Prepared for new conversation and navigated to chat")
                 st.rerun()
             else:
-                st.error("❌ Failed to create new session")
+                st.error("❌ Failed to prepare new conversation")
                 
         except Exception as e:
-            logger.error(f"Failed to create new session: {e}")
-            st.error("❌ Failed to create new session")
+            logger.error(f"Failed to prepare new conversation: {e}")
+            st.error("❌ Failed to prepare new conversation")
     
     def _switch_to_session(self, session_id: str):
         """Switch to different session with enhanced UX"""
