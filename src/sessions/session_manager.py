@@ -65,7 +65,7 @@ class SessionManager:
         # Only modify during conversation-related operations
         conversation_operations = [
             "add_message", "upload_document", "select_kb_for_chat",
-            "update_settings", "create_new_session"
+            "update_settings", "create_new_session", "rename_session"  # ← ADD THIS!
         ]
         
         return (

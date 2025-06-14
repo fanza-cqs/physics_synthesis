@@ -185,6 +185,50 @@ class SessionIntegration:
             
             return success
     
+
+
+    # Replace the handle_session_rename method in SessionIntegration with this:
+
+    def handle_session_rename(self, session_id: str, new_name: str) -> bool:
+        """
+        Handle session rename operation
+        
+        Args:
+            session_id: ID of session to rename
+            new_name: New name for the session
+            
+        Returns:
+            True if renamed successfully, False otherwise
+        """
+        try:
+            success = self.session_manager.rename_session(session_id, new_name)
+            
+            if success:
+                # CRITICAL: If this is the current session, we must reload it completely
+                current_session = self.session_manager.current_session
+                if current_session and current_session.id == session_id:
+                    # Force reload the current session from storage to get updated name
+                    fresh_session = self.session_manager.load_session(session_id, auto_activate=False)
+                    if fresh_session:
+                        # Replace the current session object with the fresh one
+                        self.session_manager._current_session = fresh_session
+                        # Sync the fresh session data to Streamlit
+                        self.sync_session_to_streamlit(fresh_session)
+                        logger.info(f"Reloaded current session {session_id} after rename to '{new_name}'")
+                    else:
+                        logger.error(f"Failed to reload session {session_id} after rename")
+                        return False
+                
+                logger.info(f"Renamed session {session_id} to '{new_name}' via integration")
+                return True
+            else:
+                logger.error(f"Failed to rename session {session_id} in session manager")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to rename session {session_id}: {e}")
+            return False
+
     def handle_assistant_response(self, content: str, sources: List[str] = None) -> bool:
         """
         Handle assistant response in conversation context
@@ -350,12 +394,13 @@ class SessionIntegration:
     
     def get_session_list_for_ui(self) -> List[Dict]:
         """
-        Get session list formatted for UI display
+        Get session list formatted for UI display (always fresh data)
         
         Returns:
             List of session metadata with UI-friendly formatting
         """
         try:
+            # Always get fresh session list - no caching
             sessions = self.session_manager.list_sessions()
             
             # Add UI-specific formatting

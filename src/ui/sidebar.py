@@ -258,33 +258,22 @@ class Sidebar:
                 ):
                     self._switch_to_session(session_id)
             
-            # Selectbox for menu options - full width on second row
-            menu_options = ["Options", "✏️ Rename", "📥 Download", "🗑️ Delete"]
-            
-            selected_option = st.selectbox(
-                "Session Actions",  # No label
-                menu_options,
-                key=f"menu_select_{session_id}",
-                index=0,  # Default to "Options"
-                label_visibility="collapsed"  # Hide the label
-            )
-            
-            # Handle the selected option
-            if selected_option == "✏️ Rename":
-                st.session_state[f'rename_session_{session_id}'] = True
-                # Reset selectbox to default
-                st.session_state[f"menu_select_{session_id}"] = "Options"
-                st.rerun()
-            elif selected_option == "📥 Download":
-                self._export_session(session_id)
-                # Reset selectbox to default
-                st.session_state[f"menu_select_{session_id}"] = "Options"
-                st.rerun()
-            elif selected_option == "🗑️ Delete":
-                st.session_state[f'confirm_delete_{session_id}'] = True
-                # Reset selectbox to default
-                st.session_state[f"menu_select_{session_id}"] = "Options"
-                st.rerun()
+            # Session actions as compact buttons
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if st.button("✏️", key=f"rename_{session_id}", help="Rename", use_container_width=True):
+                    st.session_state[f'rename_session_{session_id}'] = True
+                    st.rerun()
+
+            with col2:
+                if st.button("📥", key=f"download_{session_id}", help="Download", use_container_width=True):
+                    self._export_session(session_id)
+
+            with col3:
+                if st.button("🗑️", key=f"delete_{session_id}", help="Delete", use_container_width=True):
+                    st.session_state[f'confirm_delete_{session_id}'] = True
+                    st.rerun()
             
             # Add horizontal divider after each session (except the last one)
             if not is_last:
@@ -364,7 +353,7 @@ class Sidebar:
                 """, unsafe_allow_html=True)
                 
                 if st.button("🗑️ Delete", key=f"confirm_delete_yes_{session_id}", use_container_width=True):
-                    if self.integration.handle_session_delete(session_id):
+                    if self.integration.handle_session_deletion(session_id):
                         st.success("✅ Deleted!")
                         st.session_state[f'confirm_delete_{session_id}'] = False
                         st.rerun()
@@ -444,7 +433,7 @@ class Sidebar:
     def _switch_to_session(self, session_id: str):
         """Switch to different session with enhanced UX"""
         try:
-            if self.integration.handle_session_switch(session_id):
+            if self.integration.switch_to_session(session_id):
                 # Clear any open management dialogs
                 st.session_state.show_kb_management = False
                 st.session_state.show_zotero_management = False
