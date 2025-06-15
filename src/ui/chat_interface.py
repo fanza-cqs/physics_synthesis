@@ -453,7 +453,7 @@ class ChatInterface:
     def _handle_kb_change(self, new_kb: Optional[str]) -> bool:
         """Handle knowledge base change"""
         if self.integration:
-            return self.integration.handle_kb_change(new_kb)
+            return self.integration.handle_kb_selection(new_kb)
         else:
             return self.session_manager.set_knowledge_base_for_current(new_kb)
     

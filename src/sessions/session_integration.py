@@ -186,9 +186,21 @@ class SessionIntegration:
             return success
     
 
+    def handle_kb_change(self, new_kb_name: Optional[str]) -> bool:
+        """
+        Handle knowledge base change for current session
+        This method was missing and needed by the chat interface
+        
+        Args:
+            new_kb_name: Name of new KB (None for no KB)
+            
+        Returns:
+            True if KB changed successfully
+        """
+        return self.handle_kb_selection(new_kb_name)
 
-    # Replace the handle_session_rename method in SessionIntegration with this:
 
+    
     def handle_session_rename(self, session_id: str, new_name: str) -> bool:
         """
         Handle session rename operation

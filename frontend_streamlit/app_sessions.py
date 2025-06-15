@@ -86,7 +86,7 @@ except ImportError as e:
 try:
     from src.ui.sidebar import Sidebar, render_sidebar_css
     from src.ui.chat_interface import ChatInterface, render_chat_css
-    from src.ui.kb_management import KBManagement, render_kb_management_css
+    #from src.ui.kb_management import KBManagement, render_kb_management_css
     UI_AVAILABLE = True
 except ImportError as e:
     st.error(f"❌ Enhanced UI components import failed: {e}")
@@ -233,7 +233,7 @@ def render_all_enhanced_css():
     render_global_css()
     render_sidebar_css()
     render_chat_css()
-    render_kb_management_css()
+    #render_kb_management_css()
 
 # ============================================================================
 # Session State Initialization
@@ -453,12 +453,9 @@ def render_knowledge_bases_page(session_manager):
             
     except Exception as e:
         st.error(f"❌ Error loading unified KB interface: {e}")
+        st.error("Please check the logs and refresh the page. ")
         st.error("Please ensure the knowledge_base.py file is in the correct location")
         
-        # Fallback to legacy interface
-        st.warning("Falling back to legacy interface...")
-        kb_management = KBManagement(session_manager)
-        kb_management._render_kb_interface()
 
 def render_kb_browse_tab():
     """Render KB browsing tab using new system"""

@@ -11,7 +11,7 @@ Location: frontend_streamlit/my_pages/knowledge_base.py
 import streamlit as st
 from pathlib import Path
 import time
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 import sys
 
 # ============================================================================
@@ -58,6 +58,132 @@ from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
+# ========================================
+# SESSION INTEGRATION HELPER FUNCTIONS
+# ========================================
+
+def get_session_manager():
+    """Get session manager from Streamlit state"""
+    return st.session_state.get('session_manager')
+
+def get_session_integration():
+    """Get session integration from Streamlit state"""
+    return st.session_state.get('session_integration')
+
+def load_kb_into_current_session(kb_name: str) -> bool:
+    """
+    Properly load a knowledge base into the current session
+    FIXED: Uses working logic from kb_management.py
+    
+    Args:
+        kb_name: Name of the knowledge base to load
+        
+    Returns:
+        True if loaded successfully, False otherwise
+    """
+    try:
+        session_manager = get_session_manager()
+        session_integration = get_session_integration()
+        
+        if not session_manager:
+            logger.error("Session manager not available")
+            return False
+        
+        # Ensure we have a current session
+        if not session_manager.current_session:
+            new_session = session_manager.create_session("New Session", auto_activate=True)
+            if not new_session:
+                logger.error("Failed to create new session")
+                return False
+        
+        # Use session integration if available, otherwise fallback to session manager
+        if session_integration:
+            success = session_integration.handle_kb_selection(kb_name)
+        else:
+            success = session_manager.set_knowledge_base_for_current(kb_name)
+        
+        if success:
+            # Update Streamlit state
+            st.session_state.current_kb = kb_name
+            st.session_state.current_kb_name = kb_name
+            
+            # Add system message to session
+            session_manager.add_message_to_current(
+                "system", 
+                f"🧠 Knowledge base **{kb_name}** loaded from KB management!"
+            )
+            
+            logger.info(f"Successfully loaded KB '{kb_name}' into session")
+            return True
+        else:
+            logger.error(f"Failed to set KB '{kb_name}' for current session")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error loading KB into session: {e}")
+        return False
+
+def handle_kb_deletion_with_sessions(kb_name: str) -> bool:
+    """
+    Handle KB deletion with proper session cleanup
+    FIXED: Uses working logic from kb_management.py
+    
+    Args:
+        kb_name: Name of KB to delete
+        
+    Returns:
+        True if deleted successfully
+    """
+    try:
+        session_manager = get_session_manager()
+        config = st.session_state.get('config')
+        
+        if not config:
+            return False
+        
+        # Handle affected sessions if session manager available
+        if session_manager:
+            try:
+                # Clear KB from current session if it's using this KB
+                current_session = session_manager.current_session
+                if current_session and current_session.knowledge_base_name == kb_name:
+                    session_manager.set_knowledge_base_for_current(None)
+                    session_manager.add_message_to_current(
+                        "system",
+                        f"⚠️ Knowledge base '{kb_name}' was deleted and removed from this session."
+                    )
+                    # Update UI state
+                    st.session_state.current_kb = None
+                    st.session_state.current_kb_name = None
+                
+                # Handle other sessions using this KB (if method exists)
+                if hasattr(session_manager, 'handle_knowledge_base_deleted'):
+                    affected_count, affected_names = session_manager.handle_knowledge_base_deleted(kb_name)
+                    if affected_count > 0:
+                        logger.info(f"Updated {affected_count} sessions affected by KB deletion")
+                        
+            except Exception as e:
+                logger.warning(f"Error handling session cleanup for KB deletion: {e}")
+        
+        # Delete the actual KB
+        success = delete_knowledge_base(kb_name, config.knowledge_bases_folder)
+        
+        if success:
+            logger.info(f"Successfully deleted KB: {kb_name}")
+        
+        return success
+        
+    except Exception as e:
+        logger.error(f"Error deleting KB: {e}")
+        return False
+
+
+
+
+
+
+
 # =============================================================================
 # UNIFIED KB CREATION COMPONENT
 # =============================================================================
@@ -75,6 +201,50 @@ class UnifiedKBCreation:
         self.orchestrator = KnowledgeBaseOrchestrator(self.config)
         self.progress_manager = ProgressManager.get_instance()
     
+
+    def _handle_kb_creation_result(self, result):
+        """Handle KB creation result with session integration"""
+        if result.success:
+            st.success("✅ **Knowledge Base Created Successfully!**")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📄 Documents", result.total_documents)
+            with col2:
+                st.metric("🧩 Chunks", result.total_chunks)
+            with col3:
+                st.metric("⏱️ Time", f"{result.processing_time:.1f}s")
+            
+            st.info(f"**Knowledge Base:** `{result.kb_name}`")
+            if result.kb_path:
+                st.info(f"**Location:** `{result.kb_path}`")
+            
+            if result.sources_processed:
+                st.success(f"**Sources processed:** {', '.join(result.sources_processed)}")
+            
+            if result.sources_failed:
+                st.warning(f"**Sources failed:** {', '.join(result.sources_failed)}")
+            
+            if result.is_partial:
+                st.warning("⚠️ **Partial creation:** Some sources failed, but KB was created with available data")
+            
+            # FIXED: Properly load KB into session
+            if st.button("🔄 Use this KB in current session", key="use_new_kb"):
+                success = load_kb_into_current_session(result.kb_name)
+                if success:
+                    st.success(f"✅ Now using KB: **{result.kb_name}**")
+                    st.info("💬 Go to **Chat** to start asking questions!")
+                else:
+                    st.error("❌ Failed to load KB into session")
+                st.rerun()
+        
+        else:
+            st.error("❌ **Knowledge Base Creation Failed**")
+            for error in result.error_messages:
+                st.error(f"• {error}")
+
+
+
     def render(self):
         """Render the complete unified KB creation interface."""
         st.markdown("## 🏗️ Create or Update Knowledge Base")
@@ -507,6 +677,7 @@ def render_knowledge_base_page():
             st.stop()
     
     config = st.session_state.config
+    session_manager = get_session_manager()
     
     # Main interface tabs
     tab1, tab2, tab3 = st.tabs(["🏗️ Create/Update", "📖 Browse & Manage", "⚙️ Settings"])
@@ -529,8 +700,11 @@ def render_creation_tab(config):
         st.error(f"❌ Error loading KB creation interface: {e}")
         logger.error(f"KB creation interface error: {e}")
 
-def render_management_tab(config):
-    """Render the KB management and browsing tab."""
+def render_management_tab(config, session_manager=None):
+    """
+    Render the KB management and browsing tab with session integration.
+    FIXED: Now accepts session_manager parameter and uses proper session integration.
+    """
     st.markdown("## Browse and Manage Knowledge Bases")
     
     # Get available knowledge bases
@@ -540,7 +714,32 @@ def render_management_tab(config):
         st.info("📝 No knowledge bases found. Create your first one in the **Create/Update** tab!")
         return
     
-    # KB selection and info
+    # Quick Load Section (NEW - inspired by kb_management.py)
+    if session_manager:
+        st.markdown("### 🚀 Quick Load into Session")
+        quick_col1, quick_col2 = st.columns([3, 1])
+        
+        with quick_col1:
+            quick_kb_options = [kb['name'] for kb in available_kbs]
+            quick_selected = st.selectbox(
+                "Select KB to load:",
+                quick_kb_options,
+                key="quick_load_selector"
+            )
+        
+        with quick_col2:
+            if st.button("🔄 Load", key="quick_load_btn", use_container_width=True):
+                if quick_selected:
+                    success = load_kb_into_current_session(quick_selected)
+                    if success:
+                        st.success(f"✅ Loaded **{quick_selected}**!")
+                        st.info("💬 Go to **Chat** to start using this knowledge base!")
+                    else:
+                        st.error("❌ Failed to load KB")
+        
+        st.markdown("---")
+    
+    # KB selection and detailed info
     st.markdown("### 📖 Available Knowledge Bases")
     
     # KB selector
@@ -552,10 +751,14 @@ def render_management_tab(config):
     )
     
     if selected_kb_name:
-        render_kb_details(config, selected_kb_name, available_kbs)
+        render_kb_details(config, selected_kb_name, available_kbs, session_manager)
 
-def render_kb_details(config, kb_name: str, available_kbs: list):
-    """Render detailed information and actions for a specific KB."""
+
+def render_kb_details(config, kb_name: str, available_kbs: list, session_manager=None):
+    """
+    Render detailed information and actions for a specific KB with session integration.
+    FIXED: Now includes proper session integration for all buttons.
+    """
     # Find KB info
     kb_info = next((kb for kb in available_kbs if kb['name'] == kb_name), None)
     if not kb_info:
@@ -564,6 +767,16 @@ def render_kb_details(config, kb_name: str, available_kbs: list):
     
     # KB Header
     st.markdown(f"### 📚 {kb_name}")
+    
+    # Show current session status if session manager available
+    if session_manager and session_manager.current_session:
+        current_kb = session_manager.current_session.knowledge_base_name
+        if current_kb == kb_name:
+            st.success(f"✅ This KB is currently loaded in your session")
+        elif current_kb:
+            st.info(f"ℹ️ Current session is using: **{current_kb}**")
+        else:
+            st.info("ℹ️ No KB currently loaded in session")
     
     # Basic info metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -593,9 +806,16 @@ def render_kb_details(config, kb_name: str, available_kbs: list):
     
     with action_col1:
         if st.button("🔄 Use in Session", key=f"use_{kb_name}"):
-            st.session_state.current_kb = kb_name
-            st.success(f"✅ Now using KB: {kb_name}")
-            st.rerun()
+            # FIXED: Actually load KB into session
+            success = load_kb_into_current_session(kb_name)
+            if success:
+                st.success(f"✅ KB **{kb_name}** loaded into session!")
+                st.info("💬 Go to **Chat** to start using this knowledge base!")
+                # Optional: Auto-navigate to chat
+                # st.session_state.current_page = 'chat'
+                # st.rerun()
+            else:
+                st.error(f"❌ Failed to load KB: {kb_name}")
     
     with action_col2:
         if st.button("📊 View Statistics", key=f"stats_{kb_name}"):
@@ -614,32 +834,35 @@ def render_kb_details(config, kb_name: str, available_kbs: list):
     if st.session_state.get('confirm_delete') == kb_name:
         st.markdown("---")
         st.error(f"⚠️ **Confirm Deletion of '{kb_name}'**")
+        st.warning("This action cannot be undone and will remove the KB from all sessions using it.")
         
         confirm_col1, confirm_col2 = st.columns([1, 1])
         
         with confirm_col1:
             if st.button("✅ Yes, Delete", key=f"confirm_yes_{kb_name}", type="primary"):
-                try:
-                    success = delete_knowledge_base(kb_name, config.knowledge_bases_folder)
-                    if success:
-                        st.success(f"✅ Knowledge base '{kb_name}' deleted successfully")
-                        st.session_state.pop('confirm_delete', None)
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed to delete knowledge base '{kb_name}'")
-                except Exception as e:
-                    st.error(f"❌ Error deleting KB: {e}")
+                # FIXED: Handle deletion with session cleanup
+                success = handle_kb_deletion_with_sessions(kb_name)
+                if success:
+                    st.success(f"🗑️ Successfully deleted KB: **{kb_name}**")
+                    # Clear confirmation state
+                    del st.session_state.confirm_delete
+                    # Reset selector
+                    if 'manage_kb_selector' in st.session_state:
+                        del st.session_state.manage_kb_selector
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed to delete KB: {kb_name}")
         
         with confirm_col2:
-            if st.button("❌ Cancel", key=f"confirm_no_{kb_name}"):
-                st.session_state.pop('confirm_delete', None)
+            if st.button("❌ Cancel", key=f"cancel_{kb_name}"):
+                del st.session_state.confirm_delete
                 st.rerun()
     
     # Show detailed statistics if requested
     if st.session_state.get('show_stats') == kb_name:
         st.markdown("---")
         render_detailed_statistics(config, kb_name)
+
 
 def render_detailed_statistics(config, kb_name: str):
     """Render detailed statistics for a knowledge base."""
@@ -677,9 +900,34 @@ def render_detailed_statistics(config, kb_name: str):
     except Exception as e:
         st.error(f"Error loading statistics: {e}")
 
+
 def render_settings_tab(config):
     """Render the settings and configuration tab."""
     st.markdown("## ⚙️ Knowledge Base Settings")
+    
+    # Session Status Section (NEW)
+    session_manager = get_session_manager()
+    if session_manager:
+        st.markdown("### 💬 Current Session Status")
+        
+        current_session = session_manager.current_session
+        if current_session:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Session", current_session.name)
+            
+            with col2:
+                kb_name = current_session.knowledge_base_name or "None"
+                st.metric("Current KB", kb_name)
+            
+            with col3:
+                msg_count = len([m for m in current_session.messages if m.role != 'system'])
+                st.metric("Messages", msg_count)
+        else:
+            st.warning("⚠️ No active session")
+        
+        st.markdown("---")
     
     # API Configuration Status
     st.markdown("### 🔑 API Configuration")
@@ -730,6 +978,7 @@ def render_settings_tab(config):
                 st.success("✅")
             else:
                 st.error("❌")
+
 
 def render_css():
     """Render CSS for the entire page."""

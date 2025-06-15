@@ -53,7 +53,7 @@ class Sidebar:
         st.markdown("""
         <div style="text-align: center; padding: 1rem 0 1.5rem 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 1.5rem;">
             <div style="font-size: 2.5rem; margin-bottom: 0.5rem; animation: gentle-float 3s ease-in-out infinite;">🔬</div>
-            <h3 style="margin: 0; color: #1f2937; font-weight: 700; font-size: 1.2rem;">Physics Research</h3>
+            <h3 style="margin: 0; color: #1f2937; font-weight: 700; font-size: 1.2rem;">Alexandria</h3>
             <p style="margin: 0; color: #6b7280; font-size: 0.8rem;">Literature Assistant</p>
         </div>
         
