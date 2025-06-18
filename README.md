@@ -18,7 +18,6 @@ A modular, automated pipeline for physics research that downloads literature fro
 git clone <repository-url>
 cd physics_synthesis_pipeline
 pip install -r requirements.txt
-pip install selenium  # For DOI-based PDF downloads
 ```
 
 ### 2. Configure API Keys
