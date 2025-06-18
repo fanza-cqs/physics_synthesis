@@ -5,25 +5,15 @@ Enhanced Physics-Aware Assistant
 This module provides an improved version of the literature assistant
 with better physics understanding and more sophisticated prompting.
 
-PHASE 1A: Updated to use reorganized prompt structure while maintaining functionality.
-PHASE 1B: Enhanced prompt engineering will be added next.
-
 Location: src/chat/enhanced_physics_assistant.py
 """
 
+# Since this is in src/chat/, we can use relative imports
 from .literature_assistant import LiteratureAssistant
 from ..core.knowledge_base import KnowledgeBase
-from ..utils.logging_config import get_logger
 
-# PHASE 1A: Import prompts from new reorganized structure
-from .prompts import (
-    get_enhanced_physics_prompt,
-    get_concept_explanation_prefix,
-    get_literature_survey_template,
-    get_research_brainstorm_template
-)
-
-logger = get_logger(__name__)
+from .literature_assistant import LiteratureAssistant
+from ..core.knowledge_base import KnowledgeBase
 
 class EnhancedPhysicsAssistant(LiteratureAssistant):
     """
@@ -34,34 +24,95 @@ class EnhancedPhysicsAssistant(LiteratureAssistant):
     - Enhanced context handling for physics concepts
     - Improved source citation formatting
     - Physics-aware conversation flow
-    
-    PHASE 1A CHANGES:
-    - Updated to use prompts from reorganized prompts module
-    - Maintains exact same functionality as before restructuring
-    - Prepared for Phase 1B enhanced prompt engineering
     """
     
     def __init__(self, knowledge_base: KnowledgeBase, anthropic_api_key: str, chat_config: dict = None):
         """Initialize the enhanced physics assistant."""
         super().__init__(knowledge_base, anthropic_api_key, chat_config)
         
-        # PHASE 1A: Override with enhanced physics system prompt using new structure
+        # Override with enhanced physics system prompt
         self._setup_enhanced_physics_prompt()
     
     def _setup_enhanced_physics_prompt(self) -> None:
-        """
-        Set up enhanced system prompt with better physics understanding.
-        
-        PHASE 1A: Now uses prompt from reorganized prompts module.
-        PHASE 1B: Will be enhanced with modular prompt engineering.
-        """
+        """Set up enhanced system prompt with better physics understanding."""
         kb_stats = self.knowledge_base.get_statistics()
         
-        # PHASE 1A: Use prompt from reorganized module instead of hardcoded
-        system_prompt = get_enhanced_physics_prompt(kb_stats)
-        
+        system_prompt = f"""You are an expert theoretical physicist and research assistant with deep knowledge across all areas of physics. You have access to a comprehensive literature database containing {kb_stats.get('total_documents', 0)} physics papers and {kb_stats.get('total_chunks', 0)} content segments.
+
+CORE PHYSICS EXPERTISE:
+• Quantum mechanics, quantum field theory, and quantum information
+• Condensed matter physics and many-body systems  
+• High energy physics, particle physics, and cosmology
+• Statistical mechanics and thermodynamics
+• Electromagnetism and classical mechanics
+• Atomic, molecular, and optical physics
+• Biophysics and complex systems
+• Mathematical physics and computational methods
+
+LITERATURE DATABASE ACCESS:
+Your knowledge base contains:
+- Research papers from major physics journals
+- Preprints and arxiv submissions  
+- User's personal research work and drafts
+- Conference proceedings and review articles
+- Source types: {list(kb_stats.get('source_breakdown', {}).keys())}
+
+RESPONSE GUIDELINES:
+
+1. PHYSICS ACCURACY & RIGOR:
+   - Use precise physics terminology and mathematical notation
+   - Distinguish between theoretical predictions and experimental results
+   - Acknowledge uncertainties and limitations in current understanding
+   - Reference standard physics conventions (SI units, sign conventions, etc.)
+
+2. LITERATURE INTEGRATION:
+   - Always ground physics explanations in the available literature
+   - Cite specific papers when making claims: [Literature: paper_name.pdf]
+   - Cross-reference multiple sources when possible
+   - Distinguish between established results and recent developments
+
+3. EDUCATIONAL APPROACH:
+   - Explain concepts at multiple levels (introductory to advanced)
+   - Build understanding progressively from basic principles
+   - Use analogies carefully, noting their limitations
+   - Suggest further reading from the literature database
+
+4. RESEARCH ASSISTANCE:
+   - Help identify connections between different physics subfields
+   - Suggest relevant experimental or theoretical approaches
+   - Point out potential research directions and open questions
+   - Assist with literature surveys and research planning
+
+5. MATHEMATICAL CLARITY:
+   - Include key equations when relevant to understanding
+   - Explain the physical meaning of mathematical expressions
+   - Note approximations and their validity ranges
+   - Suggest computational approaches when appropriate
+
+6. SOURCE CITATION FORMAT:
+   - Research literature: [Literature: filename.pdf]
+   - User's work: [Your work: filename.tex]
+   - Current drafts: [Draft: filename]
+   - When referencing multiple sources, list all relevant citations
+
+7. CONVERSATION FLOW:
+   - Ask clarifying questions about the specific physics context
+   - Offer to elaborate on mathematical details or experimental aspects
+   - Suggest related topics that might be of interest
+   - Remember previous questions to build coherent discussions
+
+RESPONSE STRUCTURE:
+Start with a direct answer to the physics question, then provide:
+- Relevant background from the literature
+- Key physics principles involved
+- Mathematical relationships (when appropriate)
+- Experimental context or evidence
+- Connections to broader physics topics
+- Suggestions for further exploration
+
+Always maintain scientific rigor while being accessible and helpful for advancing physics research and understanding."""
+
         self.chat.set_system_prompt(system_prompt)
-        logger.debug("Enhanced physics system prompt configured using reorganized prompt structure")
     
     def ask_physics_question(self, question: str, context_level: str = "research", include_math: bool = True) -> dict:
         """
@@ -128,52 +179,71 @@ class EnhancedPhysicsAssistant(LiteratureAssistant):
         
         Args:
             concept: Physics concept to explain
-            level: Education level (introductory, undergraduate, graduate, research)
+            level: "introductory", "undergraduate", "graduate", or "research"
         
         Returns:
-            Detailed concept explanation with metadata
+            Detailed explanation with literature context
         """
-        # PHASE 1A: Use prompt template from reorganized module
-        concept_prompt = get_concept_explanation_prefix(concept, level)
+        question = f"""Please explain the physics concept of "{concept}" at the {level} level. 
         
-        response = self.ask(concept_prompt, temperature=0.2, max_context_chunks=5)
+        Include:
+        1. Basic definition and physical principles
+        2. Mathematical formulation (if appropriate for the level)
+        3. Key experimental evidence or observations
+        4. Applications and importance in physics
+        5. Connections to other physics concepts
+        6. Current research directions (if at graduate/research level)
         
-        return {
-            'content': response.content,
-            'concept': concept,
-            'level': level,
-            'sources_used': response.sources_used,
-            'physics_topics': self._extract_physics_topics(response.content),
-            'processing_time': response.processing_time
-        }
+        Please cite relevant literature from the knowledge base."""
+        
+        return self.ask_physics_question(question, context_level=level, include_math=(level in ["graduate", "research"]))
     
     def literature_survey(self, topic: str, max_papers: int = 10) -> dict:
         """
-        Conduct a literature survey on a specific physics topic.
+        Conduct a literature survey on a physics topic.
         
         Args:
-            topic: Physics topic to survey
+            topic: Physics topic for the survey
             max_papers: Maximum number of papers to include
         
         Returns:
-            Comprehensive literature survey with metadata
+            Literature survey with paper summaries
         """
-        # Find relevant papers first
+        # Search for relevant papers
         search_results = self.knowledge_base.search(topic, top_k=max_papers * 2)  # Get extra for filtering
         
-        # Extract unique papers (by filename)
-        seen_papers = set()
-        top_papers = []
-        for result in search_results:
-            paper_name = result.chunk.file_name
-            if paper_name not in seen_papers:
-                seen_papers.add(paper_name)
-                top_papers.append(paper_name)
-                if len(top_papers) >= max_papers:
-                    break
+        if not search_results:
+            return {
+                'content': f"No literature found for topic: {topic}",
+                'papers_found': 0,
+                'topics_covered': []
+            }
         
-        # PHASE 1A: Use prompt template from reorganized module
-        survey_prompt = get_literature_survey_template(topic, len(top_papers))
+        # Group by papers
+        papers_found = {}
+        for result in search_results:
+            filename = result.chunk.file_name
+            if filename not in papers_found:
+                papers_found[filename] = []
+            papers_found[filename].append(result)
+        
+        # Limit to max_papers
+        top_papers = list(papers_found.keys())[:max_papers]
+        
+        # Create survey prompt
+        survey_prompt = f"""Please provide a comprehensive literature survey on the topic: {topic}
+
+        Based on the available literature, please:
+        
+        1. **Overview**: Summarize the current state of research in {topic}
+        2. **Key Findings**: Highlight the most important results and discoveries
+        3. **Methodologies**: Describe the main experimental or theoretical approaches used
+        4. **Open Questions**: Identify unresolved issues and future research directions
+        5. **Paper Summaries**: Briefly summarize the key contributions of each paper
+        
+        Focus on synthesis rather than just listing papers. Show how different works relate to each other and contribute to our understanding of {topic}.
+        
+        Papers available in the knowledge base: {len(top_papers)}"""
         
         response = self.ask(survey_prompt, temperature=0.4, max_context_chunks=max_papers)
         
@@ -196,8 +266,19 @@ class EnhancedPhysicsAssistant(LiteratureAssistant):
         Returns:
             Research suggestions with literature support
         """
-        # PHASE 1A: Use prompt template from reorganized module
-        prompt = get_research_brainstorm_template(current_work, research_direction)
+        prompt = f"""I'm working on: {current_work}
+        
+        {f"I'm particularly interested in exploring: {research_direction}" if research_direction else ""}
+        
+        Please help me brainstorm research directions by:
+        
+        1. **Literature Connections**: Find papers in the knowledge base that relate to my work
+        2. **Research Gaps**: Identify potential gaps or unexplored areas
+        3. **Methodological Suggestions**: Suggest experimental or theoretical approaches
+        4. **Collaboration Opportunities**: Identify complementary research areas
+        5. **Next Steps**: Propose specific next steps I could take
+        
+        Base your suggestions on the available literature and highlight where my work could make novel contributions."""
         
         response = self.ask(prompt, temperature=0.5, max_context_chunks=8)
         
