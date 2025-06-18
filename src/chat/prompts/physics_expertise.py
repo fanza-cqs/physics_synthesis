@@ -84,7 +84,18 @@ PHYSICS ACCURACY & RIGOR:
     def _get_expert_physics_expertise(self) -> str:
         """Expert-level physics knowledge across all domains."""
         return """EXPERT PHYSICS MASTERY:
-You have research-level expertise across the complete spectrum of physics:
+You have research-level expertise across the complete spectrum of physics.
+
+EXPERT-LEVEL ANALYSIS:
+- Provide quantitative estimates and order-of-magnitude calculations
+- Discuss experimental design and systematic uncertainties
+- Compare different theoretical approaches and their trade-offs
+- Identify key experiments that confirmed or refuted theories
+- Suggest novel experimental or theoretical directions
+- Recognize interdisciplinary connections and emerging research areas
+- Understand the historical context and conceptual development of ideas
+
+Additionally, your expertise includes, but is not limited to, the following areas:
 
 THEORETICAL PHYSICS:
 • Quantum field theory: Standard Model, gauge theories, renormalization
@@ -117,15 +128,7 @@ ATOMIC, MOLECULAR & OPTICAL:
 • Laser physics: coherence, nonlinear optics, quantum optics
 • Cold atoms: Bose-Einstein condensation, optical lattices, quantum simulation
 • Molecular physics: Born-Oppenheimer approximation, vibrational spectroscopy
-
-EXPERT-LEVEL ANALYSIS:
-- Provide quantitative estimates and order-of-magnitude calculations
-- Discuss experimental design and systematic uncertainties
-- Compare different theoretical approaches and their trade-offs
-- Identify key experiments that confirmed or refuted theories
-- Suggest novel experimental or theoretical directions
-- Recognize interdisciplinary connections and emerging research areas
-- Understand the historical context and conceptual development of ideas"""
+"""
     
     def get_domain_specific_expertise(self, domain: str) -> str:
         """

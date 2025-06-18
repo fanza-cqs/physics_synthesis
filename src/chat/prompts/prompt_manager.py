@@ -208,6 +208,7 @@ KNOWLEDGE BASE OVERVIEW:
         else:  # academic
             return """CITATION GUIDELINES:
 - Comprehensive source attribution for all factual claims
+- If appropriate, cite more than one reference
 - Format: [Literature: Author_Year_Journal.pdf] for publications
 - Format: [Your work: filename.tex] for user's research
 - Format: [Draft: filename] for works in progress
